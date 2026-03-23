@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicationStatus {
+  CREATED
+  ANALYZED
+  FOLLOW_UP_COMPLETED
+  DOCUMENTS_GENERATED
+}
+
+enum WorkflowStage {
+  PARSE_SOURCE
+  EXTRACT_CANDIDATE
+  EXTRACT_JOB
+  DETECT_GAP
+  GENERATE_FOLLOW_UP
+  REGENERATE_CANDIDATE
+  GENERATE_DRAFTS
+  GENERATE_INTERVIEW
+  REWRITE_FOR_JOB
+}
+
+model Application {
+  id                  Int               @id @default(autoincrement())
+  status              ApplicationStatus @default(CREATED)
+  resumeText          String
+  portfolioText       String
+  projectDescriptions String[]
+  targetJobPostingText String
+  candidateProfileJson Json?
+  jobPostingJson       Json?
+  gapAnalysisJson      Json?
+  followUpQuestions    String[]
+  followUpAnswersJson  Json?
+  generatedDraftJson   Json?
+  rewrittenDraftJson   Json?
+  workflowRuns        WorkflowRun[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+model WorkflowRun {
+  id             Int           @id @default(autoincrement())
+  applicationId  Int
+  stage          WorkflowStage
+  inputJson      Json?
+  outputJson     Json?
+  errorMessage   String?
+  createdAt      DateTime      @default(now())
+
+  application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, stage])
+}

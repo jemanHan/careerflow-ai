@@ -1,0 +1,54 @@
+# Dev Log
+
+## 2026-03-23
+- 초기 저장소 구조 확인
+- `backend` NestJS + Prisma + LangChain MVP 골격 추가
+- `applications` API 및 분석 워크플로우 서비스 구현
+- 프로젝트 문서 셋 초기화
+- LangChain 체인을 단계별 파일로 분리(`chains/*`)
+- `WorkflowRun` 스키마 추가로 단계별 실행 로그 영속화
+- `docs/api-spec.md`, `docs/db-schema.md`, `docs/architecture.md` 상세화
+- Cursor 제어 프롬프트 문서 추가(`docs/cursor-control-prompt.md`)
+- 신규 모듈 생성: `source-documents`, `analysis`, `followup-questions`, `generated-documents`, `interview`, `llm`
+- 신규 LangChain 체인 파일 생성:
+  - `candidate-profile-extraction.chain.ts`
+  - `job-posting-analysis.chain.ts`
+  - `gap-detection.chain.ts`
+  - `follow-up-question-generation.chain.ts`
+  - `document-generation.chain.ts`
+  - `interview-question-generation.chain.ts`
+  - `rewrite.chain.ts`
+- 각 모듈의 DTO/Controller/Service 스켈레톤 생성 및 `AppModule` 등록
+- `.env.example` 확장 (`NODE_ENV`, `OPENAI_TEMPERATURE` 추가)
+- 중복 아키텍처 정리: `llm` 모듈 삭제, `applications` 모듈 삭제
+- `LangchainModule` 단일 오케스트레이션 경로로 통합
+- 서비스 리팩터링:
+  - `analysis`/`followup-questions`/`generated-documents`/`interview`가 직접 `LangchainWorkflowService` 사용
+  - 각 단계별 `WorkflowRun` 로그 저장
+- `source-documents` 조회 API 추가 (`GET /v1/source-documents/:id`)
+- `main.ts`에 CORS 활성화
+- `frontend` Next.js 최소 실행 구조 생성
+  - 진입 페이지, 입력 페이지, 결과 페이지
+  - API 호출 유틸(`frontend/lib/api.ts`)
+  - 분석/후속답변/문서생성/면접질문 실행 가능한 결과 화면
+- 실행 검증 진행:
+  - backend `npm install` 성공 (의존성 충돌 수정 후)
+  - backend `npx prisma generate` 성공
+  - backend `npm run build` 성공
+  - backend `npm run lint` 성공
+  - backend `npm run start:dev` 실행 시 DB 인증 오류(`P1000`) 확인
+  - frontend `npm install` 성공
+  - frontend `npm run build` 성공 (타입 오류 수정 후)
+  - frontend `npm run lint` 성공
+- DB 인증값 반영 후 `prisma migrate dev` 성공 및 backend 기동 성공
+- OpenAI 실연동 준비:
+  - `OPENAI_API_KEY` 안전 읽기(`trim`)
+  - `OPENAI_MODEL` + `OPENAI_HIGH_QUALITY_MODEL` 모델 라우팅 추가
+- 과호출/중복 실행 보호 구현:
+  - `RequestRateLimiterService` 추가
+  - `WorkflowExecutionLockService` 추가
+  - 분석/후속답변/문서생성/면접질문 단계 재사용 스킵 로직 추가
+  - 보호 이벤트를 `WorkflowRun.errorMessage`에 기록
+- 빌드 검증:
+  - backend `lint`/`build` 성공
+  - frontend `lint`/`build` 성공
