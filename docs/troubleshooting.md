@@ -44,6 +44,10 @@
 - **원인**: 기존 프로세스가 4000 포트를 점유
 - **조치**: 점유 PID 종료 후 backend 재기동
 - **결과**: backend `start:dev` 정상 기동
+- **예방 규칙**:
+  1. 서버 시작 전 `netstat -ano | findstr :4000`로 포트 선점 확인
+  2. 정상 서버면 재사용, 비정상이면 PID 종료 후 재기동
+  3. 동일 서버 중복 세션 실행 금지
 
 ## 2026-03-23 - AI 과호출 보호 추가
 - **문제**: 반복 클릭/중복 요청 시 불필요한 LLM 호출과 비용 증가 가능성
@@ -52,3 +56,27 @@
   2. 동일 단계 동시 실행 락(409)
   3. 기존 결과 재사용 스킵 로직 도입
 - **결과**: 중복 실행 억제 및 비용/안정성 개선
+
+## 2026-03-23 - OpenAI 429 insufficient_quota (해결: fallback 지속 실행)
+- **문제**: 분석 단계에서 OpenAI `429 insufficient_quota` 발생
+- **원인**: API 키는 유효했지만 계정 quota/billing 한도 초과
+- **조치**:
+  1. LangChain 단계 호출 예외를 잡아 fallback 응답으로 이어가도록 보강
+  2. 워크플로우가 `500`으로 중단되지 않게 유지
+- **결과**: quota 이슈가 있어도 입력→분석→질문→문서→면접질문 플로우 지속 가능
+- **예방 규칙**:
+  1. quota/billing 상태 사전 점검
+  2. 외부 LLM API 실패 시 graceful fallback 유지
+  3. 동일 실패 재시도 전 원인(429/401/timeout) 분류 후 대응
+
+## 2026-03-23 - Nest DI 오류로 서버 시작 실패(해결)
+- **문제**: `Nest can't resolve dependencies ... RequestRateLimiterService`
+- **원인**: 공통 provider를 모듈 스코프에 노출하지 않아 `AnalysisModule`에서 주입 실패
+- **조치**:
+  1. `src/common/common.module.ts` 생성
+  2. `@Global()` + provider/export 설정
+  3. `AppModule`에 `CommonModule` import
+- **결과**: backend 정상 기동
+- **예방 규칙**:
+  1. 공통 서비스는 Global module로 관리
+  2. 신규 DI 서비스 추가 시 provider/export/import 경로를 함께 점검

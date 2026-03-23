@@ -46,6 +46,19 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
+## Safe Local Run Rules
+- 백엔드 실행 전:
+  - `netstat -ano | findstr :4000`
+- 프론트 실행 전:
+  - `netstat -ano | findstr :3000`
+- 포트 점유 PID 종료:
+  - `cmd.exe /c "taskkill /PID 26500 /F"`
+- 규칙:
+  - 정상 서버가 이미 떠 있으면 재사용
+  - 비정상 프로세스만 종료 후 재기동
+  - 동일 서버 중복 실행 금지
+  - 동일 실패 명령 반복 전 원인 진단 우선
+
 ## Docs
 - `docs/project-overview.md`
 - `docs/job-alignment.md`

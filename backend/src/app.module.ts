@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
-import { RequestRateLimiterService } from "./common/request-rate-limiter.service";
-import { WorkflowExecutionLockService } from "./common/workflow-execution-lock.service";
+import { CommonModule } from "./common/common.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
 import { FollowupQuestionsModule } from "./modules/followup-questions/followup-questions.module";
 import { GeneratedDocumentsModule } from "./modules/generated-documents/generated-documents.module";
@@ -13,6 +12,7 @@ import { SourceDocumentsModule } from "./modules/source-documents/source-documen
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    CommonModule,
     PrismaModule,
     LangchainModule,
     SourceDocumentsModule,
@@ -20,7 +20,6 @@ import { SourceDocumentsModule } from "./modules/source-documents/source-documen
     FollowupQuestionsModule,
     GeneratedDocumentsModule,
     InterviewModule
-  ],
-  providers: [RequestRateLimiterService, WorkflowExecutionLockService]
+  ]
 })
 export class AppModule {}
