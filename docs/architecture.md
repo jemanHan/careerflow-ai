@@ -66,13 +66,18 @@ backend/
 - 후속 답변 제출 후 갭이 재계산되면 점수를 갱신하고 `previousEstimatedFitScore`/`scoreDelta`로 변화량을 남긴다.
 
 ## 현재 영속화 모델 (PostgreSQL)
+- `TestUser`:
+  - 데모/평가용 라이트 계정 ID(숫자 3자리)와 생성 시각 저장(비밀번호/인증 없음)
+  - DB 유니크 보장, 충돌 시 재생성
 - `Application`:
   - 입력 원문, 분석 결과(`candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`), **`fitAnalysisJson`**, 후속 질문/답변, 생성 문서, 면접 리포트, 리라이트 결과 저장
+  - 선택 필드 `testUserId`로 라이트 테스트 계정과 연결
 - `WorkflowRun`:
   - 단계별 input/output/error, 모델 라우팅/실행 메타데이터 저장
 - 해석:
-  - 워크플로우 영속화는 이미 구현되어 있으며, 사용자 계정 없이도 재조회/재실행 가능
-  - 로그인 개인화는 `User` + `Application.userId` 추가로 확장 가능
+  - 라이트 테스트 계정으로 워크플로우 재조회/재방문이 가능(데모 친화 save-first)
+  - 목록/상세 조회는 요청 헤더의 활성 테스트 ID와 대상 ID가 일치할 때만 허용
+  - 현재는 인증 없는 데모 흐름이며, 프로덕션 로그인/권한 모델은 향후 확장 범위
 
 ## 강조 프로젝트(선택) 반영 규칙
 - 입력의 첫 번째 프로젝트 텍스트를 `prioritized project context`로 간주
@@ -142,7 +147,9 @@ backend/
 - 스킵 이벤트는 `WorkflowRun.errorMessage`에 기록
 
 ## 현재 엔드포인트
+- `POST /v1/source-documents/test-user` (테스트 ID 발급)
 - `POST /v1/source-documents`
+- `GET /v1/source-documents/by-test-user/:testUserId` (테스트 사용자 저장 워크플로우 조회)
 - `GET /v1/source-documents/:id`
 - `POST /v1/analysis/run`
 - `POST /v1/followup-questions/submit`
@@ -172,12 +179,22 @@ backend/
 
 ## 로그인/개인화 확장 시 영향 범위(계획)
 - 추가 예정:
-  - `User` 엔티티, 인증 세션/토큰 전략
-  - `Application.userId` 소유권 연결
+  - 정식 `User` 엔티티, 인증 세션/토큰 전략
+  - `Application.userId` 소유권 연결 + 권한 검증
   - 버전형 초안 엔티티(선택)
 - 변경 예상:
   - 조회 API에 권한 검증 추가
   - save-first 흐름(부분 재생성/버전 비교) 중심 UX로 확장
+
+## Retrieval-assisted 확장 방향 (미구현)
+- 현재 아키텍처는 입력/중간결과/생성결과를 DB에 저장하므로, 추후 retrieval layer를 붙일 기반이 이미 있음.
+- 단, 현재는 full RAG(벡터DB 검색 + 주입 파이프라인) 미구현 상태이며, 이를 현재 구현으로 주장하지 않음.
+- 확장 시나리오:
+  - 경량 단계: 유사 채용공고, 사용자 저장 히스토리, 이전 생성 결과를 선택 조회해 프롬프트 컨텍스트에 보강
+  - 고도화 단계: 임베딩 인덱스/검색 전략을 단계별 체인(적합도/문서/면접)에 맞춰 분리 적용
+- 설계 원칙:
+  - retrieval은 품질 보강 레이어로 추가하고, 기존 워크플로우 안정성(락/재사용/로그)은 유지
+  - "현재 동작"과 "향후 확장"을 문서/포트폴리오에서 명확히 분리
 
 ### 구현 범위 vs 확장 로드맵 (명확화)
 - 현재 구현: 비로그인 MVP. `Application`/`WorkflowRun` 중심으로 입력·분석·생성 결과를 저장하고 재실행한다.

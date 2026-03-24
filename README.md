@@ -16,6 +16,17 @@ AI 기반 취업 지원 문서 워크플로우 MVP입니다.
 4. 후속 답변 반영 후 프로필·갭·적합도 갱신
 5. 지원동기/자기소개 초안 + 경력기술서 초안 + 면접 대비 리포트(핵심/심화 질문 카드)
 6. 채용공고 맞춤 리라이트
+7. 라이트 테스트 계정 기반 저장/재방문 흐름(데모용, 비인증)
+
+## 데모용 저장 흐름 (라이트 개인화)
+- 홈에서 `테스트 계정 생성`으로 비밀번호 없는 테스트 ID 발급
+  - 형식 규칙: 숫자 3자리 (예: `027`)
+  - DB 유니크 보장(충돌 시 재생성)
+- 같은 테스트 ID를 입력하면 `나의 CareerFlow 보기`에서 저장된 워크플로우 목록 재조회
+- `/new` 입력 폼 저장 시 `testUserId`를 함께 저장해 결과를 사용자별로 묶음
+- 생성된 ID는 브라우저 `localStorage`에 저장되어 재방문 시 재사용 가능
+- 현재 세션의 활성 테스트 ID와 일치하는 데이터만 조회 가능하도록 제한
+- 이 기능은 데모/평가 편의 목적이며, **프로덕션 인증/보안 로그인 대체가 아님**
 
 ## 입력이 결과에 반영되는 방식 (간단 로직)
 1. 사용자가 이력서/포트폴리오/강조 프로젝트(선택)/채용공고를 입력하면 `Application`에 저장됩니다.
@@ -81,6 +92,7 @@ npm run dev
 - `docs/dev-log.md`
 - `docs/portfolio-points.md`
 - `docs/portfolio-core.md` (포트폴리오용 핵심 로직/의사결정 요약)
+- `docs/langchain-in-this-project.md` (LangChain 적용 범위/비범위 설명)
 - `docs/next-roadmap.md`
 - `docs/performance-metrics.md`
 - `docs/agent-rules.md` (runtime/documentation single rules source)

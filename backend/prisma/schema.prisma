@@ -28,6 +28,8 @@ enum WorkflowStage {
 
 model Application {
   id                  Int               @id @default(autoincrement())
+  testUserId          String?
+  testUser            TestUser?         @relation(fields: [testUserId], references: [id], onDelete: SetNull)
   status              ApplicationStatus @default(CREATED)
   resumeText          String
   portfolioText       String
@@ -44,6 +46,8 @@ model Application {
   workflowRuns        WorkflowRun[]
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
+
+  @@index([testUserId, createdAt])
 }
 
 model WorkflowRun {
@@ -58,4 +62,10 @@ model WorkflowRun {
   application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([applicationId, stage])
+}
+
+model TestUser {
+  id           String        @id
+  applications Application[]
+  createdAt    DateTime      @default(now())
 }

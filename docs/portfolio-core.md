@@ -60,3 +60,6 @@ CareerFlow AI는 이력서/포트폴리오/채용공고를 입력받아 **적합
 - **현재**: 비로그인 MVP, `Application`/`WorkflowRun` 기반 저장/재실행
 - **확장**: 로그인 + `userId` 연결, 버전 관리, 부분 재생성(save-first)
 - 해석: 인증은 의도적으로 MVP 범위에서 제외했지만, 저장 구조는 개인화 확장을 전제로 설계
+
+## 관련 문서
+- `docs/langchain-in-this-project.md`

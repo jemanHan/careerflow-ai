@@ -17,4 +17,8 @@ export class CreateSourceDocumentDto {
   @IsString()
   @MinLength(20)
   targetJobPostingText!: string;
+
+  @IsOptional()
+  @IsString()
+  testUserId?: string;
 }

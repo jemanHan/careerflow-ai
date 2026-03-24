@@ -151,3 +151,16 @@
   - 질문 개수는 1~3개 유지
   - 보완 1회 제출 후 입력창 숨김(재분석 시 다시 표시)
   - 답변 textarea placeholder 제거
+- 라이트 개인화/저장형 데모 흐름 추가:
+  - `TestUser` 모델 추가 및 `Application.testUserId` 연결(옵션)
+  - 테스트 계정 생성 API(`POST /v1/source-documents/test-user`) 추가
+  - 테스트 계정별 워크플로우 조회 API(`GET /v1/source-documents/by-test-user/:testUserId`) 추가
+  - 홈 화면에 `테스트 계정 생성`, 기존 ID 저장, `나의 CareerFlow 보기` 진입점 추가
+  - `/new`에 예시 템플릿 3종과 테스트 ID 입력 필드 추가
+  - `/my` 페이지에서 저장된 워크플로우 목록 재조회 후 결과 페이지 재진입 가능
+  - 범위 명시: 인증/비밀번호 없는 데모 편의 흐름이며, 프로덕션 인증 대체가 아님
+- 테스트 ID 규칙 명시/강제:
+  - 생성 형식: `test-` + 영문소문자/숫자 5~6자리
+  - DB 유니크 충돌 시 재시도 로직 추가
+  - 생성 직후 UI 표시 + `localStorage` 저장
+  - 조회 시 활성 테스트 ID 헤더(`x-test-user-id`)와 대상 ID 일치 검증 추가

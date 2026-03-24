@@ -12,12 +12,30 @@ export class ApiError extends Error {
   }
 }
 
+function getActiveTestUserId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem("careerflow-test-user-id") ?? "";
+}
+
+function withTestUserHeader(headers?: HeadersInit): HeadersInit {
+  const activeTestUserId = getActiveTestUserId().trim();
+  if (!activeTestUserId) {
+    return headers ?? {};
+  }
+  return {
+    ...(headers ?? {}),
+    "x-test-user-id": activeTestUserId
+  };
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(options?.headers ?? {})
+      ...withTestUserHeader(options?.headers)
     },
     cache: "no-store"
   });
@@ -45,6 +63,7 @@ export type CreateSourcePayload = {
   portfolioText: string;
   projectDescriptions: string[];
   targetJobPostingText: string;
+  testUserId?: string;
 };
 
 export async function createSource(payload: CreateSourcePayload) {
@@ -88,4 +107,28 @@ export async function generateInterview(applicationId: number, force = false) {
 
 export async function fetchApplication(applicationId: number) {
   return request(`/source-documents/${applicationId}`);
+}
+
+export async function createTestUser() {
+  return request<{ id: string }>("/source-documents/test-user", {
+    method: "POST"
+  });
+}
+
+export type SavedWorkflowItem = {
+  id: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  targetJobPostingText: string;
+  fitAnalysisJson?: { estimatedFitScore?: number } | null;
+};
+
+export async function listMyWorkflows(testUserId: string) {
+  return request<{ id: string; applications: SavedWorkflowItem[] }>(
+    `/source-documents/by-test-user/${encodeURIComponent(testUserId)}`,
+    {
+      headers: withTestUserHeader()
+    }
+  );
 }
