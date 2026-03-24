@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { WORKFLOW_STAGE } from "../../common/workflow-stage.constants";
 import { RequestRateLimiterService } from "../../common/request-rate-limiter.service";
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
+import { computeFitAnalysisSnapshot } from "../../common/fit-analysis.util";
+import { GapAnalysis } from "../langchain/workflow.types";
 import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -33,7 +35,8 @@ export class AnalysisService {
       app.candidateProfileJson &&
       app.jobPostingJson &&
       app.gapAnalysisJson &&
-      app.followUpQuestions.length > 0
+      app.followUpQuestions.length > 0 &&
+      app.fitAnalysisJson != null
     ) {
       await this.prisma.workflowRun.create({
         data: {
@@ -108,6 +111,8 @@ export class AnalysisService {
       }
     });
 
+    const fitAnalysis = computeFitAnalysisSnapshot(gap as GapAnalysis, candidate, null);
+
     const questions = await this.workflow.generateFollowUpQuestions(gap);
     const followUpRoute = this.workflow.getRoutingInfo("generateFollowUpQuestions");
     const followUpExecution = this.workflow.getExecutionDiagnostics("generateFollowUpQuestions");
@@ -130,6 +135,7 @@ export class AnalysisService {
         candidateProfileJson: candidate as unknown as Prisma.InputJsonValue,
         jobPostingJson: job as unknown as Prisma.InputJsonValue,
         gapAnalysisJson: gap as unknown as Prisma.InputJsonValue,
+        fitAnalysisJson: fitAnalysis as unknown as Prisma.InputJsonValue,
         followUpQuestions: questions
       }
     });

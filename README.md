@@ -1,7 +1,7 @@
 # CareerFlow AI
 
 AI 기반 취업 지원 문서 워크플로우 MVP입니다.  
-이력서/포트폴리오/JD를 입력하면 분석, 갭 탐지, 후속 질문, 문서 생성, JD 맞춤 리라이트까지 수행합니다.
+이력서/포트폴리오/채용공고를 입력하면 분석, 갭 탐지, 후속 질문, 문서 생성, 채용공고 맞춤 리라이트까지 수행합니다.
 
 ## Stack
 - Frontend: Next.js + TypeScript + Tailwind CSS
@@ -11,18 +11,18 @@ AI 기반 취업 지원 문서 워크플로우 MVP입니다.
 
 ## MVP 기능
 1. 입력 문서 수집
-2. 후보자/JD 구조화 분석
-3. 갭 분석 + 후속 질문 생성
-4. 후속 답변 반영 재분석
-5. 지원동기/자기소개 초안 + 경력기술서 도우미 초안 + 면접 예상 질문 생성
-6. JD 맞춤 리라이트
+2. 후보자/채용공고 구조화 + 갭 분석 + **AI 추정 적합도 스냅샷**(참고 지표, 채용 보장 아님)
+3. 서류 보완용 가이드 질문 + 대화형 입력
+4. 후속 답변 반영 후 프로필·갭·적합도 갱신
+5. 지원동기/자기소개 초안 + 경력기술서 초안 + 면접 대비 리포트(핵심/심화 질문 카드)
+6. 채용공고 맞춤 리라이트
 
 ## 입력이 결과에 반영되는 방식 (간단 로직)
-1. 사용자가 이력서/포트폴리오/강조 프로젝트(선택)/JD를 입력하면 `Application`에 저장됩니다.
-2. 분석 단계에서 후보자 프로필과 JD 요구사항을 각각 구조화하고, 둘의 차이를 `gapAnalysis`로 계산합니다.
-3. 갭 분석 결과를 바탕으로 후속 질문을 생성하고, 사용자의 후속 답변을 다시 후보자 근거에 반영합니다.
-4. 문서 생성 단계는 최종 후보자 프로필 + JD 요구사항 + 강조 프로젝트 컨텍스트를 함께 사용해 초안을 만듭니다.
-5. 면접 질문 단계는 부족 근거(`missingSignals`, `weakEvidence`)와 JD 적합도 관점으로 질문을 생성합니다.
+1. 사용자가 이력서/포트폴리오/강조 프로젝트(선택)/채용공고를 입력하면 `Application`에 저장됩니다.
+2. 분석 단계에서 후보자 프로필과 채용공고 요구사항을 각각 구조화하고, 둘의 차이를 `gapAnalysis`로 계산합니다. 갭 결과로 **휴리스틱 적합도 점수**를 `fitAnalysisJson`에 저장합니다(추가 LLM 호출 없음).
+3. 갭 분석을 바탕으로 서류 보완용 가이드 문장을 생성하고, 사용자가 답하면 후보자 프로필을 갱신한 뒤 갭을 재계산하고 적합도 점수를 업데이트합니다(이전 대비 변화량 표시).
+4. 문서 생성 단계는 최종 후보자 프로필 + 채용공고 요구사항 + 강조 프로젝트 컨텍스트를 함께 사용해 초안을 만듭니다.
+5. 면접 대비 리포트 단계는 제출된 근거와 채용공고를 바탕으로 심층 질문을 생성하며, 각 질문에 `whyAsked`/`answerPoints`/`caution`을 함께 제공합니다.
 6. 각 단계 실행 결과/모델/폴백 여부는 `WorkflowRun`에 기록되어, 왜 해당 결과가 나왔는지 추적할 수 있습니다.
 
 ## Backend 시작 (Node 설치 후)
@@ -38,8 +38,8 @@ npm run start:dev
 ### LLM 환경변수 (provider/model routing)
 - `LLM_PROVIDER`: `gemini`(기본) 또는 `openai`
 - `GEMINI_API_KEY`: Gemini Developer API 키
-- `GEMINI_DEFAULT_MODEL`: 기본/경량 작업용 모델 (`gemini-2.5-flash-lite`)
-- `GEMINI_HIGH_QUALITY_MODEL`: 문서 생성/리라이트용 고품질 모델 (`gemini-2.5-flash`)
+- `GEMINI_DEFAULT_MODEL`: 기본/경량 작업용 모델 (기본값 `gemini-3.1-flash-lite` — 추출·채용공고·갭·후속·면접 질문)
+- `GEMINI_HIGH_QUALITY_MODEL`: 문서 생성·채용공고 맞춤 리라이트용 (기본값 `gemini-2.5-flash`; light와 별도 모델로 유지)
 - `OPENAI_API_KEY`: OpenAI provider 사용 시 키
 - `OPENAI_MODEL`: OpenAI 기본/경량 모델
 - `OPENAI_HIGH_QUALITY_MODEL`: OpenAI 고품질 모델
@@ -80,6 +80,7 @@ npm run dev
 - `docs/troubleshooting.md`
 - `docs/dev-log.md`
 - `docs/portfolio-points.md`
+- `docs/portfolio-core.md` (포트폴리오용 핵심 로직/의사결정 요약)
 - `docs/next-roadmap.md`
 - `docs/performance-metrics.md`
 - `docs/agent-rules.md` (runtime/documentation single rules source)

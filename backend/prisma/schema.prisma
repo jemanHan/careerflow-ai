@@ -36,6 +36,7 @@ model Application {
   candidateProfileJson Json?
   jobPostingJson       Json?
   gapAnalysisJson      Json?
+  fitAnalysisJson      Json?
   followUpQuestions    String[]
   followUpAnswersJson  Json?
   generatedDraftJson   Json?

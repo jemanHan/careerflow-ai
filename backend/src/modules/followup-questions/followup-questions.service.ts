@@ -3,8 +3,9 @@ import { Prisma } from "@prisma/client";
 import { RequestRateLimiterService } from "../../common/request-rate-limiter.service";
 import { WORKFLOW_STAGE } from "../../common/workflow-stage.constants";
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
+import { computeFitAnalysisSnapshot, type FitAnalysisSnapshot } from "../../common/fit-analysis.util";
 import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
-import { CandidateProfile } from "../langchain/workflow.types";
+import { CandidateProfile, GapAnalysis, JobPostingProfile } from "../langchain/workflow.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SubmitFollowupAnswersDto } from "./dto/submit-followup-answers.dto";
 
@@ -69,12 +70,37 @@ export class FollowupQuestionsService {
       }
     });
 
+    const job = app.jobPostingJson as JobPostingProfile | null;
+    if (!job) {
+      throw new NotFoundException("Job posting analysis not found. Run fit analysis first.");
+    }
+    const newGap = await this.workflow.detectGaps(updated, job);
+    const gapRoute = this.workflow.getRoutingInfo("detectGaps");
+    const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps");
+    await this.prisma.workflowRun.create({
+      data: {
+        applicationId,
+        stage: WORKFLOW_STAGE.DETECT_GAP,
+        inputJson: {
+          afterFollowUp: true,
+          llmRoute: gapRoute,
+          llmExecution: gapExecution
+        } as unknown as Prisma.InputJsonValue,
+        outputJson: newGap as unknown as Prisma.InputJsonValue
+      }
+    });
+
+    const previousFit = app.fitAnalysisJson as FitAnalysisSnapshot | null | undefined;
+    const fitAnalysis = computeFitAnalysisSnapshot(newGap as GapAnalysis, updated, previousFit ?? null);
+
     return this.prisma.application.update({
       where: { id: applicationId },
       data: {
         status: "FOLLOW_UP_COMPLETED",
         followUpAnswersJson: dto.answers as unknown as Prisma.InputJsonValue,
-        candidateProfileJson: updated as unknown as Prisma.InputJsonValue
+        candidateProfileJson: updated as unknown as Prisma.InputJsonValue,
+        gapAnalysisJson: newGap as unknown as Prisma.InputJsonValue,
+        fitAnalysisJson: fitAnalysis as unknown as Prisma.InputJsonValue
       }
     });
     } finally {

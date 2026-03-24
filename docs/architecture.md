@@ -1,7 +1,7 @@
 # 아키텍처
 
 ## 시스템 구조
-- Frontend (Next.js): 입력/결과 조회/분석 실행/후속답변/문서 생성/면접 질문 생성 화면
+- Frontend (Next.js): 입력/결과 조회/지원 적합도 분석/대화형 보완/문서 초안/면접 대비 리포트 화면
 - Backend (NestJS): 모듈형 API + 워크플로우 오케스트레이션
 - DB (PostgreSQL + Prisma): 상태, 단계 로그, 산출물 영속화
 - AI (Gemini Developer API + LangChain): 단계별 RunnableSequence 체인
@@ -43,26 +43,31 @@ backend/
 ## 모듈 책임
 - `SourceDocumentsModule`: 입력 원문 저장/조회
 - `AnalysisModule`: parse~follow-up 질문 생성까지 실행
-- `FollowupQuestionsModule`: 후속 답변 반영 재분석
+- `FollowupQuestionsModule`: 후속 답변 반영 후 후보자 프로필 갱신 + **갭 재탐지(`DETECT_GAP`)** + `fitAnalysisJson` 갱신
 - `GeneratedDocumentsModule`: 문서 생성 + 리라이트
-- `InterviewModule`: 면접 질문 생성
+- `InterviewModule`: 면접 대비 리포트(질문+생성 이유+답변 포인트+주의) 생성
 - `LangchainModule`: 각 단계 체인 실행과 출력 형식 보장
 - `PrismaModule`: DB 연결과 트랜잭션/CRUD 접근
 
 ## 구조화 AI 워크플로우 단계
 1. `PARSE_SOURCE`: 입력 문서 결합/정규화
 2. `EXTRACT_CANDIDATE`: 후보자 구조화 JSON 추출
-3. `EXTRACT_JOB`: JD 구조화 JSON 추출
+3. `EXTRACT_JOB`: 채용공고 구조화 JSON 추출
 4. `DETECT_GAP`: 매칭/누락/근거약함 탐지
 5. `GENERATE_FOLLOW_UP`: 보완 질문 생성
 6. `REGENERATE_CANDIDATE`: 후속 답변 반영 재분석
 7. `GENERATE_DRAFTS`: 문서 3종 초안 생성
-8. `GENERATE_INTERVIEW`: 면접 질문 생성
-9. `REWRITE_FOR_JOB`: JD 맞춤 리라이트
+8. `GENERATE_INTERVIEW`: 면접 대비 리포트 생성
+9. `REWRITE_FOR_JOB`: 채용공고 맞춤 리라이트
+
+## 지원 적합도 스냅샷 (`fitAnalysisJson`)
+- 분석 완료 시점에 갭 분석 결과로부터 **휴리스틱 점수(0–100)** 와 강점/약점/추천 보완 방향을 저장한다(LLM 추가 호출 없음).
+- 점수는 **AI 추정 서류·직무 적합도**이며 채용 합격을 보장하지 않음(프론트·스냅샷에 고지 문구 포함).
+- 후속 답변 제출 후 갭이 재계산되면 점수를 갱신하고 `previousEstimatedFitScore`/`scoreDelta`로 변화량을 남긴다.
 
 ## 현재 영속화 모델 (PostgreSQL)
 - `Application`:
-  - 입력 원문, 분석 결과, 후속 질문/답변, 생성 문서, 리라이트 결과 저장
+  - 입력 원문, 분석 결과(`candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`), **`fitAnalysisJson`**, 후속 질문/답변, 생성 문서, 면접 리포트, 리라이트 결과 저장
 - `WorkflowRun`:
   - 단계별 input/output/error, 모델 라우팅/실행 메타데이터 저장
 - 해석:
@@ -74,8 +79,8 @@ backend/
 - 반영 지점:
   - 후보자 프로필 추출
   - 문서 생성
-  - 면접 질문 생성
-  - JD 맞춤 리라이트
+  - 면접 대비 리포트 생성
+  - 채용공고 맞춤 리라이트
 - 목적: 선택 입력이어도 실제 생성 품질에 영향을 주는 우선 컨텍스트로 사용
 
 ## 체인 오케스트레이션 원칙
@@ -86,17 +91,19 @@ backend/
 - 문서/면접 생성 프롬프트는 과장 방지 규칙을 포함:
   - 입력 근거 없는 RAG/Agent/성과 단정 표현 금지
   - 근거 약한 항목은 `구현/검증 중`, `초기 버전` 톤으로 생성
+  - 면접 리포트는 `whyAsked`(근거 연결), `answerPoints`(실전 준비), `caution`(과장 리스크)를 구조화해 출력
 
 ## 모델 라우팅 (현재 기준)
-- 기본 모델(`GEMINI_DEFAULT_MODEL` = `gemini-2.5-flash-lite`):
-  - 후보자 추출
-  - JD 분석
+- **역할 기반 이중 라우트**를 유지한다(기본·고품질을 한 모델로 합치지 않음). 무료 티어는 모델별 일일 한도가 분리되어 있어, 작업·비용·품질을 분리해 설명·포트폴리오 가치를 보존한다.
+- 기본 모델(`GEMINI_DEFAULT_MODEL`, 기본값 `gemini-3.1-flash-lite`) — **light**:
+  - 후보자 프로필 추출
+  - 채용공고 분석
   - 갭 탐지
-  - 후속 질문 생성
-  - 면접 질문 생성
-- 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL` = `gemini-2.5-flash`):
+  - 후속 질문 생성(서류 보완용)
+  - 면접 대비 리포트 생성
+- 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL`, 기본값 `gemini-2.5-flash`) — **quality**:
   - 문서 3종 생성
-  - JD 맞춤 리라이트
+  - 채용공고 맞춤 리라이트
 - provider를 `openai`로 바꾸면 `OPENAI_*` 모델 키를 사용
 - API 키 미설정/할당량/파싱 오류 시 fallback 응답을 반환하고 `llmExecution`에 원인을 기록
 
@@ -105,11 +112,24 @@ backend/
 - 각 LLM 단계의 `inputJson.llmRoute`에 아래 값이 기록됨:
   - `provider` (gemini/openai)
   - `route` (light/quality)
-  - `model` (실제 사용 모델명)
+  - `model` (실제 사용 모델명 — `GEMINI_DEFAULT_MODEL` 또는 `GEMINI_HIGH_QUALITY_MODEL` 값과 일치해야 함)
 - 실제 실행 결과 확인은 `inputJson.llmExecution`으로 판단:
   - `fallbackUsed` (true/false)
   - `fallbackReason` (실패 원인)
   - `hasProviderApiKey` (키 인식 여부)
+
+### `WorkflowRun.stage`별 기대 라우트 (Gemini)
+| stage | route | 용도 |
+| --- | --- | --- |
+| `EXTRACT_CANDIDATE` | light | 후보 추출 |
+| `EXTRACT_JOB` | light | 채용공고 분석 |
+| `DETECT_GAP` | light | 갭 탐지 |
+| `GENERATE_FOLLOW_UP` | light | 후속 질문 생성 |
+| `REGENERATE_CANDIDATE` | light | 후속 답변 반영 시 프로필 재생성(`extractCandidateProfile`과 동일 라우트) |
+| `GENERATE_DRAFTS` | quality | 문서 3종 |
+| `GENERATE_INTERVIEW` | light | 면접 질문 |
+| `REWRITE_FOR_JOB` | quality | 채용공고 맞춤 리라이트 |
+| `PARSE_SOURCE` | (LLM 없음) | 원문 결합만 |
 
 ## API 과호출 방지 설계(MVP)
 - `RequestRateLimiterService`: 라우트별 분당 호출 제한(429)
@@ -118,6 +138,7 @@ backend/
   - 분석 결과가 이미 있으면 재분석 스킵
   - 동일 후속답변 재제출 시 재실행 스킵
   - 문서/면접질문이 이미 있으면 재생성 스킵
+  - 문서 생성은 `generatedDraftJson`의 문서 필드만 갱신하고 기존 면접 리포트는 보존(2번/3번 단계 독립성 유지)
 - 스킵 이벤트는 `WorkflowRun.errorMessage`에 기록
 
 ## 현재 엔드포인트
@@ -135,9 +156,10 @@ backend/
 - `frontend/components/results-client.tsx`:
   - 분석/문서/면접 실행 버튼
   - 후속 질문별 1:1 답변 입력 폼
-  - 후속 답변 점수 표시(입력 완성도/길이 기반 경량 점수)
+  - 후속 답변 진행 상태 표시(질문별 입력/제출 이력)
   - 생성 결과(지원동기/자기소개 초안, 경력기술서 초안, 프로젝트 소개문구 초안)
-  - 경력기술서+프로젝트 근거를 합친 `경력기술서 도우미` 통합 뷰
+  - 면접 대비 리포트 카드(핵심 질문 3 + 심화 질문 2, 질문/생성 이유/답변 준비 포인트/주의)
+  - 경력기술서 초안 + 프로젝트 근거 통합 뷰
   - `왜 이런 결과가 나왔나` 근거 요약
   - 현재 상태 요약(경력 레벨/특화/보완점)
   - 처리 중 로딩 스피너/진행 문구
@@ -156,3 +178,9 @@ backend/
 - 변경 예상:
   - 조회 API에 권한 검증 추가
   - save-first 흐름(부분 재생성/버전 비교) 중심 UX로 확장
+
+### 구현 범위 vs 확장 로드맵 (명확화)
+- 현재 구현: 비로그인 MVP. `Application`/`WorkflowRun` 중심으로 입력·분석·생성 결과를 저장하고 재실행한다.
+- 향후 확장: 로그인/인증과 `userId` 연결을 추가해 사용자별 저장형 워크플로우로 확장한다.
+- 설계 의도: 인증을 미리 넣지 않고 핵심 워크플로우 가치를 먼저 검증한 뒤, 저장 구조를 기반으로 개인화/권한/버전 기능을 단계적으로 붙일 수 있게 함.
+- 기대 효과: 이전 결과 재사용과 부분 재생성으로 반복 LLM 호출을 줄여 비용·응답시간·운영 안정성을 개선.

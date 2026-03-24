@@ -4,7 +4,7 @@ import { RequestRateLimiterService } from "../../common/request-rate-limiter.ser
 import { WORKFLOW_STAGE } from "../../common/workflow-stage.constants";
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
 import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
-import { CandidateProfile, JobPostingProfile } from "../langchain/workflow.types";
+import { CandidateProfile, GapAnalysis, InterviewReportItem, JobPostingProfile } from "../langchain/workflow.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GenerateInterviewQuestionsDto } from "./dto/generate-interview-questions.dto";
 
@@ -36,7 +36,8 @@ export class InterviewService {
     if (!candidate || !job) throw new NotFoundException("Analysis data not found.");
     const generated = (app.generatedDraftJson ?? {}) as Record<string, unknown>;
     const existingQuestions = generated.interviewQuestions;
-    if (!dto.force && Array.isArray(existingQuestions) && existingQuestions.length > 0) {
+    const existingReport = generated.interviewReport;
+    if (!dto.force && ((Array.isArray(existingQuestions) && existingQuestions.length > 0) || (Array.isArray(existingReport) && existingReport.length > 0))) {
       await this.prisma.workflowRun.create({
         data: {
           applicationId,
@@ -47,11 +48,14 @@ export class InterviewService {
       return app;
     }
 
-    const questions = await this.workflow.generateInterviewQuestions(
+    const gapAnalysis = app.gapAnalysisJson as GapAnalysis | null;
+    const reportItems = await this.workflow.generateInterviewQuestions(
       candidate,
       job,
-      prioritizedProjectContext
+      prioritizedProjectContext,
+      gapAnalysis ?? undefined
     );
+    const questions = reportItems.map((item) => item.question);
     const interviewRoute = this.workflow.getRoutingInfo("generateInterviewQuestions");
     const interviewExecution = this.workflow.getExecutionDiagnostics("generateInterviewQuestions");
     await this.prisma.workflowRun.create({
@@ -62,7 +66,7 @@ export class InterviewService {
           llmRoute: interviewRoute,
           llmExecution: interviewExecution
         } as unknown as Prisma.InputJsonValue,
-        outputJson: { questions } as unknown as Prisma.InputJsonValue
+        outputJson: { items: reportItems } as unknown as Prisma.InputJsonValue
       }
     });
     return this.prisma.application.update({
@@ -70,7 +74,8 @@ export class InterviewService {
       data: {
         generatedDraftJson: {
           ...generated,
-          interviewQuestions: questions
+          interviewQuestions: questions,
+          interviewReport: reportItems as InterviewReportItem[]
         } as unknown as Prisma.InputJsonValue
       }
     });

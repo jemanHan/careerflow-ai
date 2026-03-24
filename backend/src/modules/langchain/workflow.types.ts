@@ -33,6 +33,15 @@ export type GeneratedDraft = {
   projectIntro: string;
 };
 
+export type InterviewReportItem = {
+  section: "core" | "deep";
+  question: string;
+  whyAsked: string;
+  answerPoints: string[];
+  modelAnswer: string;
+  caution?: string;
+};
+
 export type RewriteDraft = {
   coverLetter: string;
   careerDescription: string;

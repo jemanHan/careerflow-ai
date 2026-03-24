@@ -3,18 +3,19 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  font-family: "Pretendard", "Noto Sans KR", "Nanum Gothic", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  @apply bg-slate-100 text-slate-900 antialiased;
 }
 
 main {
-  @apply mx-auto max-w-5xl p-6;
+  @apply mx-auto w-full px-4 py-6 md:px-6;
 }
 
 textarea,
 input {
-  @apply w-full rounded border border-slate-300 px-3 py-2;
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100;
 }
 
 button {
-  @apply rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50;
+  @apply transition disabled:cursor-not-allowed disabled:opacity-55;
 }

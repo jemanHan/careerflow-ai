@@ -170,3 +170,23 @@
 - **예방 규칙**:
   1. 복원 스크립트는 zip 내부 경로 구조를 먼저 검증
   2. 성공 메시지 외에 실제 대상 파일 내용을 후검증
+
+## 2026-03-24 - Gemini 429 / 분석이 끝나지 않음처럼 보임(원인: 무료 티어 쿼터)
+- **문제**: 지원 적합도 분석 버튼 후 로딩이 매우 길거나 멈춘 것처럼 보임. 백엔드 로그에 `429 Too Many Requests`, `generate_content_free_tier_requests`, `limit: 20` 등
+- **원인**: Gemini Developer API 무료 티어는 **모델별 일일 생성 요청 수**에 상한이 있음. 한도 초과 시 API가 `Retry-After`(예: 40초)를 주고, 클라이언트 재시도로 **한 단계만 수 분** 걸릴 수 있음. 분석은 LLM 호출이 여러 번 연속이라 체감상 “안 끝남”으로 보일 수 있음
+- **조치**:
+  1. [Google AI Studio 쿼터/요금](https://ai.google.dev/gemini-api/docs/rate-limits) 확인, **익일 재시도** 또는 유료/상위 플랜 검토
+  2. 코드: LangChain `ChatGoogleGenerativeAI`에 `maxRetries: 0` 적용해 429 시 **즉시 실패 → 기존 fallback**으로 넘기고 응답 시간 단축(`langchain-workflow.service.ts`)
+  3. 결과 화면에서 `llmExecution.fallbackUsed`·사유 확인
+- **예방**: 데모/개발 시 호출 수를 줄이기(불필요한 `force` 반복 금지), 필요 시 `OPENAI` provider로 전환
+- **모델 라우팅**: 기본(`GEMINI_DEFAULT_MODEL`, 예: `gemini-3.1-flash-lite`)과 고품질(`GEMINI_HIGH_QUALITY_MODEL`, 예: `gemini-2.5-flash`)은 **별도 쿼터 풀**이다. 한 모델로 합치지 않는 것이 의도된 설계(역할·비용·포트폴리오 설명 가능성). 429가 나면 해당 모델명만 한도 초과 가능
+- **대략적인 LLM 호출 수(한 번의 ① 분석)**: 후보·JD·갭·후속 질문 등 **light 모델 호출이 여러 번** 연속됨. 동일 공고를 짧은 시간에 반복 실행하면 해당 모델 일일 한도를 빠르게 소모함
+
+## 2026-03-24 - Next.js dev Internal Server Error (`778.js` / `routes-manifest.json`)(해결)
+- **문제**: 브라우저에서 `Internal Server Error`, 터미널에 `Cannot find module './778.js'`, `ENOENT routes-manifest.json`, webpack 캐시 오류
+- **원인**: `frontend/.next` 산출물이 HMR/중단·동시 편집 등으로 불완전해져 청크 참조가 깨짐
+- **조치**:
+  1. 포트 3000에서 기존 `next dev` 프로세스 종료
+  2. `frontend/.next` 폴더 삭제
+  3. `cd frontend && npm run dev`로 재기동
+- **예방 규칙**: 동일 증상 시 코드 수정 전에 먼저 `.next` 정리 후 재시작

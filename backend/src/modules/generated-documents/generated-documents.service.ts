@@ -92,7 +92,10 @@ export class GeneratedDocumentsService {
       where: { id: applicationId },
       data: {
         status: "DOCUMENTS_GENERATED",
-        generatedDraftJson: generated as unknown as Prisma.InputJsonValue,
+        generatedDraftJson: {
+          ...(existingDraft as Record<string, unknown>),
+          ...generated
+        } as unknown as Prisma.InputJsonValue,
         rewrittenDraftJson: rewritten as unknown as Prisma.InputJsonValue
       }
     });

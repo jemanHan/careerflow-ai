@@ -8,7 +8,7 @@
 - 최근 30개 LLM 단계 실행 중 fallback 발생: **17회**
 - 최근 7개 핵심 단계(분석~생성) fallback: **0회**
 - 최근 7개 핵심 단계 성공: **7/7 (100%)**
-- 최근 정상 실행 provider/model: **gemini / gemini-2.5-flash**
+- 최근 정상 실행 provider: **gemini** (단계별로 light `gemini-3.1-flash-lite` vs quality `gemini-2.5-flash` — `workflowRuns.inputJson.llmRoute.model`로 확인)
 
 > 해석: 초기에는 키 인식/파싱 이슈로 fallback 비율이 높았으나,  
 > Gemini 고정 + 파싱 정규화 이후 최근 전체 단계는 fallback 없이 성공.

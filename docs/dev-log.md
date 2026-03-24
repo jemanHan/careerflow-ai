@@ -113,3 +113,41 @@
   - 실행 규칙 단일 기준 문서를 `docs/agent-rules.md`로 통합
   - `docs/cursor-runtime-rules.md`는 redirect 문서로 축약
   - 출력 라벨 기준을 `docs/project-overview.md`에 명시
+- 프론트 데모 가독성/신뢰성 보강:
+  - 입력 페이지(`frontend/app/new/page.tsx`) 섹션 구분/오류 표시/버튼 상태 가시성 개선
+  - 결과 페이지(`frontend/components/results-client.tsx`)에 LLM 실행 상태 패널 추가
+    - real LLM vs fallback 명시
+    - provider/model, API key 감지 여부 표시
+    - 강조 프로젝트 우선 반영 여부 표시
+  - 출력 라벨 정리: `경력기술서 도우미` -> `경력기술서 초안`
+  - 생성 결과 복사 버튼(자기소개 초안/경력기술서 초안/면접질문) 추가
+- 후속 질문 vs 면접 질문 역할 분리 및 면접 품질 개선:
+  - 후속 질문: 지원서/포트폴리오에 보강할 사실·근거를 끌어내는 짧은 질문(프롬프트 명시)
+  - 면접 질문: 채용 면접관 관점의 심층 검증(역할·트레이드오프·검증·강조 프로젝트 이해도), `gapAnalysisJson`을 검증 테마로 전달
+  - 라이브 URL 질문: 입력에 배포/URL 근거가 있을 때만 생성하도록 면접 프롬프트 제한
+  - ~~`generateInterviewQuestions`를 quality로 상향~~ → 이후 설계상 **면접 질문은 light(기본 모델), 문서·리라이트만 quality**로 재정렬(2026-03-24 후속 항목 참고)
+  - 결과 화면에 후속 질문(서류 보완) vs 면접 질문(심층 검증) 안내 문구 추가(`frontend/components/results-client.tsx`)
+- 제품 흐름 재프레이밍 (적합도 → 보완 → 문서 → 면접 리포트):
+  - `Application.fitAnalysisJson` 추가(마이그레이션 `20260324043000_add_fit_analysis_json`)
+  - 갭 분석 기반 휴리스틱 적합도 점수·강점/약점/추천 보완·이전 대비 델타(`backend/src/common/fit-analysis.util.ts`)
+  - 분석 완료 시 `fitAnalysisJson` 저장(`analysis.service.ts`)
+  - 후속 답변 제출 시 갭 재탐지 + 적합도 갱신(`followup-questions.service.ts`)
+  - 후속 질문 프롬프트: 번호형 Qn 대신 코칭형 문장 유도(`follow-up-questions.chain.ts`)
+  - ~~결과 UI: ①적합도 ②보완 ③문서 ④면접 리포트~~ -> 현재는 ①적합도 / ②문서 / ③면접 리포트 + 대화형 보완(무번호)로 정리
+- Gemini 429 시 분석 지연 완화: LLM 클라이언트 `maxRetries: 0`으로 쿼터 초과 시 재시도 대기 시간 축소(`langchain-workflow.service.ts`), `docs/troubleshooting.md`에 무료 티어 한도 설명 추가
+- Gemini 모델 라우팅 재정렬(역할·포트폴리오 설명 가치 유지):
+  - 기본값 `GEMINI_DEFAULT_MODEL=gemini-3.1-flash-lite`(light), `GEMINI_HIGH_QUALITY_MODEL=gemini-2.5-flash`(quality) — **두 슬롯을 단일 모델로 통합하지 않음**
+  - light: 후보 추출·JD·갭·후속 질문·**면접 질문** / quality: **문서 생성·JD 맞춤 리라이트만**
+  - `routeOf`에서 `generateInterviewQuestions`를 quality에서 제외해 설계 의도와 정합
+- 면접 대비 리포트 고도화:
+  - 면접 체인 출력 스키마를 `questions: string[]`에서 `items[]` 구조로 확장
+  - 각 항목에 `question`, `whyAsked`, `answerPoints`, `caution(optional)` 포함
+  - `whyAsked`는 JD/이력서·포트폴리오·강조 프로젝트/갭 신호를 연결해 생성 근거를 설명
+  - 과장 리스크(RAG/Agent/production/internal tool 등) 시 `caution`으로 명시 안내
+- 2번(문서 생성)과 3번(면접 리포트) 단계 독립성 보강:
+  - 문서 생성 시 `generatedDraftJson` 병합 저장으로 기존 면접 리포트가 삭제되지 않도록 수정
+  - UI에서 면접 리포트를 카드형으로 표시하고, 문서/면접 출력 가독성(폭/패딩/행간/스크롤 높이) 개선
+- 대화형 보완 UX 조정:
+  - 질문 개수는 1~3개 유지
+  - 보완 1회 제출 후 입력창 숨김(재분석 시 다시 표시)
+  - 답변 textarea placeholder 제거

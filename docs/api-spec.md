@@ -42,9 +42,9 @@ Base URL: `/v1`
 }
 ```
 
-## 4) 후속 답변 제출
+## 4) 후속 답변 제출 (대화형 보완)
 ### `POST /followup-questions/submit`
-`REGENERATE_CANDIDATE` 단계 실행.
+`REGENERATE_CANDIDATE` 실행 후 갱신된 후보자로 **`DETECT_GAP` 재실행**하여 `gapAnalysisJson`·`fitAnalysisJson`(적합도 점수·델타)을 갱신한다.
 
 ### Request
 ```json
@@ -58,12 +58,13 @@ Base URL: `/v1`
 ```
 
 ### Response
-- 업데이트된 `candidateProfileJson`
+- 업데이트된 `candidateProfileJson`, `gapAnalysisJson`, `fitAnalysisJson`
 - 상태: `FOLLOW_UP_COMPLETED`
 
 ## 5) 문서 생성
 ### `POST /generated-documents/generate`
 `GENERATE_DRAFTS -> (선택) REWRITE_FOR_JOB` 실행.
+> 주의: 문서 생성은 `generatedDraftJson`의 문서 필드만 갱신하며, 기존 `interviewQuestions`/`interviewReport`는 유지된다.
 
 ### Request
 ```json
@@ -77,12 +78,12 @@ Base URL: `/v1`
 ### Response
 - `generatedDraftJson`:
   - `coverLetter` (지원동기/자기소개 초안)
-  - `careerDescription` (경력기술서 도우미 초안)
+  - `careerDescription` (경력기술서 초안)
   - `projectIntro` (프로젝트 근거 보강 문구)
 - `rewrittenDraftJson` (옵션)
 - 상태: `DOCUMENTS_GENERATED`
 
-## 6) 면접 질문 생성
+## 6) 면접 대비 리포트 생성
 ### `POST /interview/generate`
 `GENERATE_INTERVIEW` 실행.
 
@@ -93,6 +94,21 @@ Base URL: `/v1`
   "force": false
 }
 ```
+
+### Response (조회 시 반영 형태)
+- `generatedDraftJson.interviewQuestions`: 문자열 질문 배열(하위 호환)
+- `generatedDraftJson.interviewReport`: 면접 준비 카드 배열
+```json
+{
+  "section": "core | deep",
+  "question": "질문 본문",
+  "whyAsked": "JD/입력 근거/갭 기준 생성 이유",
+  "answerPoints": ["답변 준비 포인트 1", "답변 준비 포인트 2"],
+  "caution": "과장 위험 시 주의 문구 (선택)"
+}
+```
+- 생성 규칙: 총 5개 항목(`core` 3개 + `deep` 2개)
+- UI 권장 노출: `core`(핵심 질문) / `deep`(심화 질문) 섹션 분리
 
 ## 에러/보호 규칙
 - `400`: DTO 유효성 실패
