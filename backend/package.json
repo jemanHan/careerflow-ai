@@ -13,6 +13,7 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@langchain/google-genai": "^0.2.12",
     "@langchain/openai": "^0.6.6",
     "@nestjs/common": "^10.4.8",
     "@nestjs/config": "^3.2.3",

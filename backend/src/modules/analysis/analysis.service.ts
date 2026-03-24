@@ -45,7 +45,16 @@ export class AnalysisService {
       return app;
     }
 
-    const sourceText = [app.resumeText, app.portfolioText, ...app.projectDescriptions].join("\n\n");
+    const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
+    const otherProjects = app.projectDescriptions.slice(1);
+    const sourceText = [
+      app.resumeText,
+      app.portfolioText,
+      prioritizedProjectContext ? `Highlighted project (highest priority):\n${prioritizedProjectContext}` : "",
+      ...otherProjects
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
@@ -54,38 +63,62 @@ export class AnalysisService {
       }
     });
 
-    const candidate = await this.workflow.extractCandidateProfile(sourceText);
+    const candidate = await this.workflow.extractCandidateProfile(sourceText, prioritizedProjectContext);
+    const extractCandidateRoute = this.workflow.getRoutingInfo("extractCandidateProfile");
+    const extractCandidateExecution = this.workflow.getExecutionDiagnostics("extractCandidateProfile");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.EXTRACT_CANDIDATE,
+        inputJson: {
+          llmRoute: extractCandidateRoute,
+          llmExecution: extractCandidateExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: candidate as unknown as Prisma.InputJsonValue
       }
     });
 
     const job = await this.workflow.extractJobPosting(app.targetJobPostingText);
+    const extractJobRoute = this.workflow.getRoutingInfo("extractJobPosting");
+    const extractJobExecution = this.workflow.getExecutionDiagnostics("extractJobPosting");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.EXTRACT_JOB,
+        inputJson: {
+          llmRoute: extractJobRoute,
+          llmExecution: extractJobExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: job as unknown as Prisma.InputJsonValue
       }
     });
 
     const gap = await this.workflow.detectGaps(candidate, job);
+    const gapRoute = this.workflow.getRoutingInfo("detectGaps");
+    const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.DETECT_GAP,
+        inputJson: {
+          llmRoute: gapRoute,
+          llmExecution: gapExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: gap as unknown as Prisma.InputJsonValue
       }
     });
 
     const questions = await this.workflow.generateFollowUpQuestions(gap);
+    const followUpRoute = this.workflow.getRoutingInfo("generateFollowUpQuestions");
+    const followUpExecution = this.workflow.getExecutionDiagnostics("generateFollowUpQuestions");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.GENERATE_FOLLOW_UP,
+        inputJson: {
+          llmRoute: followUpRoute,
+          llmExecution: followUpExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: { questions } as unknown as Prisma.InputJsonValue
       }
     });

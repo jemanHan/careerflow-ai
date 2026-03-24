@@ -7,8 +7,8 @@
 | 채용 요구사항/우대 | 프로젝트 내 반영 위치 | 증명하는 기능/기술 구현 | 포트폴리오/인터뷰 설명 문장 |
 |---|---|---|---|
 | AI/LLM 기반 문제 해결 | `backend/src/modules/langchain/*`, `analysis`/`followup-questions`/`generated-documents` API | 이력서/포트폴리오/JD를 구조화 JSON으로 변환 후 갭 분석, 후속 질문, 문서 생성까지 단계형 실행 | "단일 생성기가 아니라, 정보 부족을 탐지하고 보완하는 LLM 워크플로우를 설계했습니다." |
-| OpenAI API 실무 운용 | `langchain-workflow.service.ts`, `.env.example` | 단일 공급자(OpenAI) 전략 + 환경변수 기반 키 주입 + fallback 처리 | "공급자를 단순화해 MVP 리스크를 낮추고, 키 미설정 시에도 로컬 플로우 검증이 가능하도록 설계했습니다." |
-| 모델 라우팅 최적화 | `langchain-workflow.service.ts` | 단계별 모델 라우팅(경량 모델 vs 고품질 모델)으로 비용/품질 균형 | "문서 생성/리라이트만 고품질 모델을 사용해 비용 대비 품질을 최적화했습니다." |
+| LLM API 실무 운용 | `langchain-workflow.service.ts`, `.env.example` | 환경변수 기반 provider/model 주입 + fallback 처리 + 실행 메타데이터 기록 | "LLM 호출 실패 시에도 전체 플로우가 중단되지 않도록 fallback과 단계 로그를 설계했습니다." |
+| 모델 라우팅 최적화 | `langchain-workflow.service.ts` | 단계별 모델 라우팅(light vs quality)으로 비용/품질 균형 | "분석/질문은 경량 모델, 문서/리라이트는 고품질 모델로 분리해 비용 대비 품질을 관리했습니다." |
 | LangChain 실사용 역량 | `langchain-workflow.service.ts` 및 체인 분리 예정 파일 | `PromptTemplate` + 구조화 파싱 + `RunnableSequence`로 체인 모듈화 | "모든 AI 단계를 LangChain 체인으로 분리해 디버깅/재사용/개선이 가능하도록 만들었습니다." |
 | TypeScript 실무 역량 | Backend + Frontend 전역 | DTO/class-validator/Zod 기반 타입 안정성, JSON 스키마 명시화 | "입력-분석-출력 전 구간에 타입 계약을 두어 AI 결과도 코드 레벨에서 검증했습니다." |
 | NestJS 기반 백엔드 설계 | `AppModule`, `SourceDocumentsModule`, `AnalysisModule`, `PrismaModule`, `LangchainModule` | 모듈형 구조, REST API, ValidationPipe, 서비스 레이어 분리 | "NestJS 모듈 경계로 AI 오케스트레이션과 도메인 로직을 분리해 유지보수성을 확보했습니다." |
@@ -22,6 +22,7 @@
 | 실무형 자동화 가치 | `POST /source-documents`, `/analysis/run`, `/followup-questions/submit`, `/generated-documents/generate`, `/interview/generate` | 채용 준비에 반복 발생하는 문서 작성/정합성 점검 작업 자동화 | "반복적이고 시간이 많이 드는 지원서 커스터마이징 업무를 자동화하는 도구로 설계했습니다." |
 | 운영 안정성/비용 통제 | `request-rate-limiter.service.ts`, `workflow-execution-lock.service.ts` | 레이트 제한(429), 동시 실행 락(409), 중복 재실행 스킵 | "AI API 오남용을 방지하고, 동일 요청 중복 실행을 억제해 운영 안정성을 확보했습니다." |
 | LLM/Agent/RAG 이해도 (과장 없는 수준) | 체인 기반 오케스트레이션, RAG 제외 의사결정 | MVP에서 RAG/멀티에이전트를 의도적으로 제외하고 체인 중심 구현 | "요구 가치 대비 복잡도를 고려해 RAG를 배제하고 체인 품질을 먼저 완성하는 선택을 했습니다." |
+| 성능 개선/운영 지표 관리 | `workflowRuns` + `docs/performance-metrics.md` | fallback 원인(키/쿼터/파싱) 기록, 핵심 7단계 성공률 추적 | "문제 발생 시 감으로 재시도하지 않고, 단계별 메타데이터로 원인을 분류한 뒤 개선해 최근 핵심 실행 7/7 성공을 달성했습니다." |
 
 ## 인터뷰용 핵심 스토리라인
 

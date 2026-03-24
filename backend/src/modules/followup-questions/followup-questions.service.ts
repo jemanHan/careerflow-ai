@@ -47,16 +47,24 @@ export class FollowupQuestionsService {
       experiences: [],
       projects: []
     }) as CandidateProfile;
+    const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
     const evidence = dto.answers.map((a) => `${a.questionId}: ${a.answer}`).join("\n");
     const updated = await this.workflow.regenerateCandidateWithFollowUp(
       candidate,
-      evidence
+      evidence,
+      prioritizedProjectContext
     );
+    const regenerateRoute = this.workflow.getRoutingInfo("extractCandidateProfile");
+    const regenerateExecution = this.workflow.getExecutionDiagnostics("extractCandidateProfile");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.REGENERATE_CANDIDATE,
-        inputJson: dto.answers as unknown as Prisma.InputJsonValue,
+        inputJson: {
+          answers: dto.answers,
+          llmRoute: regenerateRoute,
+          llmExecution: regenerateExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: updated as unknown as Prisma.InputJsonValue
       }
     });

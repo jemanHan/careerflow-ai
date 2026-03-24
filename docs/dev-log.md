@@ -52,3 +52,64 @@
 - 빌드 검증:
   - backend `lint`/`build` 성공
   - frontend `lint`/`build` 성공
+- 선택 입력 개선:
+  - 프론트 라벨을 `강조하고 싶은 프로젝트 (선택)`으로 변경
+  - 강조 프로젝트를 분석/문서/면접/리라이트 단계의 우선 컨텍스트로 전달
+  - 결과 화면에 `강조 프로젝트 반영됨` 표시 추가
+- Gemini 모델 라우팅 반영:
+  - provider 선택을 env 기반(`LLM_PROVIDER`)으로 전환
+  - 기본 provider를 Gemini Developer API로 설정
+  - `gemini-2.5-flash-lite`(light), `gemini-2.5-flash`(quality) 단계 라우팅 적용
+  - LLM 단계별 `WorkflowRun.inputJson.llmRoute`에 provider/model 기록 추가
+- Gemini 고정 운영 보강:
+  - provider 자동 전환 경로 제거 후 `LLM_PROVIDER=gemini` 고정 실행 확인
+  - 서버 부팅 로그에서 `geminiKeyPresent=true` 확인
+  - `workflowRuns.inputJson.llmExecution.fallbackUsed=false`로 실제 호출 검증
+- 후보자 프로필 체인 파싱 보강:
+  - `projects[].evidence`가 문자열로 내려오는 경우 배열로 정규화
+  - candidate 단계 Zod 파싱 실패로 fallback 되던 케이스 해결
+- 결과 페이지 UX 개선:
+  - 카드형 레이아웃/상태 메시지/최근 API 실행 로그 가시성 강화
+  - `왜 이런 결과가 나왔나` 도출 근거 요약 섹션 추가
+  - 문서 라벨을 `지원동기/자기소개 초안`, `경력기술서 초안`, `프로젝트 소개문구 초안`으로 정리
+  - 후속 질문 입력을 질문별 1:1 입력 폼으로 변경
+- 생성 톤 안전장치 추가:
+  - 문서/면접 질문 프롬프트에 과장 방지 규칙 추가
+  - RAG/Agent/정량성과 등 미검증 항목은 단정 표현 금지
+- 결과 화면 추가 정리:
+  - 강조 프로젝트는 기본 숨김 + 펼치기 방식으로 변경
+  - 후속 질문 하단 중복 섹션 제거(입력 폼 섹션 단일화)
+  - 프론트의 API 실행 로그/Raw JSON 패널 제거 (서버 `WorkflowRun` 로그로 일원화)
+  - LLM 처리 중 스피너와 진행 문구 표시
+- 후속 질문 생성 정책 조정:
+  - follow-up 질문 개수 5개 고정(체인 스키마 및 포맷 지시 반영)
+  - fallback 질문도 5개로 통일
+- 후속답변 UX 추가 보강:
+  - 후속답변 제출 시 반영 동작을 UI 문구로 안내
+  - 답변 점수(질문 커버율 + 평균 답변 길이) 표시
+- 보완점/용어 가독성 개선:
+  - 주요 보완점 표시에서 RAG/Agent 등 기술용어를 사용자 친화 한국어로 변환
+- 문서 출력 UX 보완:
+  - 생성 문서 글자 크기/행간 확대
+  - 경력기술서와 프로젝트 소개문구를 통합한 `경력기술서 도우미` 출력 섹션으로 재구성
+- 성능/운영 지표 문서화:
+  - `docs/performance-metrics.md` 추가
+  - `workflowRuns` 기반 fallback 빈도/최근 핵심 단계 성공률 스냅샷 기록
+
+## 2026-03-24
+- Consolidation/Product-hardening 패스 진행
+- PostgreSQL 영속화 모델 재검증 및 문서 정합화:
+  - `Application`, `WorkflowRun` 기준 현재 저장 범위/한계/확장 포인트 반영
+- 출력/UX 고도화:
+  - 후속답변 제출 동작 안내 강화
+  - 답변 점수화(질문 커버율+평균 길이)
+  - 보완점 한글화 표시
+  - 경력기술서/프로젝트 문구 통합 뷰
+  - 생성 문서 가독성(폰트/행간) 개선
+- 문서 정리:
+  - `architecture`, `api-spec`, `db-schema`, `job-alignment`, `portfolio-points`, `README`, `troubleshooting` 동기화
+  - 2일차 개발일지 추가(`docs/day2-dev-log-2026-03-24.md`)
+- 문서 중복 정리:
+  - 실행 규칙 단일 기준 문서를 `docs/agent-rules.md`로 통합
+  - `docs/cursor-runtime-rules.md`는 redirect 문서로 축약
+  - 출력 라벨 기준을 `docs/project-overview.md`에 명시

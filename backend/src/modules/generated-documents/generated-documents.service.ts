@@ -32,9 +32,19 @@ export class GeneratedDocumentsService {
 
     const candidate = app.candidateProfileJson as CandidateProfile | null;
     const job = app.jobPostingJson as JobPostingProfile | null;
+    const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
     if (!candidate || !job) throw new NotFoundException("Analysis data not found.");
 
-    if (!dto.force && app.generatedDraftJson) {
+    const existingDraft = (app.generatedDraftJson ?? {}) as Record<string, unknown>;
+    const hasExistingDocuments =
+      typeof existingDraft.coverLetter === "string" &&
+      existingDraft.coverLetter.trim().length > 0 &&
+      typeof existingDraft.careerDescription === "string" &&
+      existingDraft.careerDescription.trim().length > 0 &&
+      typeof existingDraft.projectIntro === "string" &&
+      existingDraft.projectIntro.trim().length > 0;
+
+    if (!dto.force && hasExistingDocuments) {
       await this.prisma.workflowRun.create({
         data: {
           applicationId,
@@ -45,20 +55,34 @@ export class GeneratedDocumentsService {
       return app;
     }
 
-    const generated = await this.workflow.generateDocuments(candidate, job);
+    const generated = await this.workflow.generateDocuments(candidate, job, prioritizedProjectContext);
+    const generateRoute = this.workflow.getRoutingInfo("generateDocuments");
+    const generateExecution = this.workflow.getExecutionDiagnostics("generateDocuments");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.GENERATE_DRAFTS,
+        inputJson: {
+          llmRoute: generateRoute,
+          llmExecution: generateExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: generated as unknown as Prisma.InputJsonValue
       }
     });
-    const rewritten = dto.rewriteForJob ? await this.workflow.rewriteForTargetJob(generated, job) : undefined;
+    const rewritten = dto.rewriteForJob
+      ? await this.workflow.rewriteForTargetJob(generated, job, prioritizedProjectContext)
+      : undefined;
     if (rewritten) {
+      const rewriteRoute = this.workflow.getRoutingInfo("rewriteForTargetJob");
+      const rewriteExecution = this.workflow.getExecutionDiagnostics("rewriteForTargetJob");
       await this.prisma.workflowRun.create({
         data: {
           applicationId,
           stage: WORKFLOW_STAGE.REWRITE_FOR_JOB,
+          inputJson: {
+            llmRoute: rewriteRoute,
+            llmExecution: rewriteExecution
+          } as unknown as Prisma.InputJsonValue,
           outputJson: rewritten as unknown as Prisma.InputJsonValue
         }
       });

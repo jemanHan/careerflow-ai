@@ -1,7 +1,7 @@
 import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { RunnableSequence } from "@langchain/core/runnables";
-import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { CandidateProfile, GapAnalysis, JobPostingProfile } from "../workflow.types";
 
@@ -12,7 +12,7 @@ const gapSchema = z.object({
 });
 
 export async function runGapDetectionChain(
-  llm: ChatOpenAI,
+  llm: BaseChatModel,
   candidate: CandidateProfile,
   job: JobPostingProfile
 ): Promise<GapAnalysis> {
@@ -20,6 +20,8 @@ export async function runGapDetectionChain(
   const prompt = PromptTemplate.fromTemplate(
     [
       "You compare candidate profile and target job requirements.",
+      "Write matchedSignals, missingSignals, weakEvidence in plain Korean phrases.",
+      "Avoid raw buzzwords-only output like 'RAG', 'Agent' without explanation.",
       "Return strict JSON only.",
       "{format_instructions}",
       "Candidate JSON: {candidate}",

@@ -4,8 +4,8 @@
 - Frontend (Next.js): 입력/결과 조회/분석 실행/후속답변/문서 생성/면접 질문 생성 화면
 - Backend (NestJS): 모듈형 API + 워크플로우 오케스트레이션
 - DB (PostgreSQL + Prisma): 상태, 단계 로그, 산출물 영속화
-- AI (OpenAI + LangChain): 단계별 RunnableSequence 체인
-- AI Provider: OpenAI 단일 제공자(초기 MVP 안정성/운영 단순성 우선)
+- AI (Gemini Developer API + LangChain): 단계별 RunnableSequence 체인
+- AI Provider: 환경변수 기반 선택(`LLM_PROVIDER`), 현재 운영 기본은 Gemini
 
 ## 백엔드 폴더 구조
 ```text
@@ -60,23 +60,56 @@ backend/
 8. `GENERATE_INTERVIEW`: 면접 질문 생성
 9. `REWRITE_FOR_JOB`: JD 맞춤 리라이트
 
+## 현재 영속화 모델 (PostgreSQL)
+- `Application`:
+  - 입력 원문, 분석 결과, 후속 질문/답변, 생성 문서, 리라이트 결과 저장
+- `WorkflowRun`:
+  - 단계별 input/output/error, 모델 라우팅/실행 메타데이터 저장
+- 해석:
+  - 워크플로우 영속화는 이미 구현되어 있으며, 사용자 계정 없이도 재조회/재실행 가능
+  - 로그인 개인화는 `User` + `Application.userId` 추가로 확장 가능
+
+## 강조 프로젝트(선택) 반영 규칙
+- 입력의 첫 번째 프로젝트 텍스트를 `prioritized project context`로 간주
+- 반영 지점:
+  - 후보자 프로필 추출
+  - 문서 생성
+  - 면접 질문 생성
+  - JD 맞춤 리라이트
+- 목적: 선택 입력이어도 실제 생성 품질에 영향을 주는 우선 컨텍스트로 사용
+
 ## 체인 오케스트레이션 원칙
 - 각 단계는 독립 함수 + 독립 PromptTemplate 사용
 - 단계별 입출력은 JSON으로 강제(파싱 실패 지점 명확화)
 - 단계 실행 결과는 `WorkflowRun`으로 DB에 누적 기록
 - one-shot 프롬프트 금지, 단계별 재실행 가능성 우선
+- 문서/면접 생성 프롬프트는 과장 방지 규칙을 포함:
+  - 입력 근거 없는 RAG/Agent/성과 단정 표현 금지
+  - 근거 약한 항목은 `구현/검증 중`, `초기 버전` 톤으로 생성
 
-## OpenAI 모델 라우팅
-- 기본 모델(`OPENAI_MODEL`):
+## 모델 라우팅 (현재 기준)
+- 기본 모델(`GEMINI_DEFAULT_MODEL` = `gemini-2.5-flash-lite`):
   - 후보자 추출
   - JD 분석
   - 갭 탐지
   - 후속 질문 생성
   - 면접 질문 생성
-- 고품질 모델(`OPENAI_HIGH_QUALITY_MODEL`):
+- 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL` = `gemini-2.5-flash`):
   - 문서 3종 생성
   - JD 맞춤 리라이트
-- 키 미설정 시 fallback 응답을 반환해 로컬 E2E를 유지
+- provider를 `openai`로 바꾸면 `OPENAI_*` 모델 키를 사용
+- API 키 미설정/할당량/파싱 오류 시 fallback 응답을 반환하고 `llmExecution`에 원인을 기록
+
+## 모델 사용 검증 방법
+- `GET /v1/source-documents/:id`의 `workflowRuns`를 확인
+- 각 LLM 단계의 `inputJson.llmRoute`에 아래 값이 기록됨:
+  - `provider` (gemini/openai)
+  - `route` (light/quality)
+  - `model` (실제 사용 모델명)
+- 실제 실행 결과 확인은 `inputJson.llmExecution`으로 판단:
+  - `fallbackUsed` (true/false)
+  - `fallbackReason` (실패 원인)
+  - `hasProviderApiKey` (키 인식 여부)
 
 ## API 과호출 방지 설계(MVP)
 - `RequestRateLimiterService`: 라우트별 분당 호출 제한(429)
@@ -99,4 +132,27 @@ backend/
 - `frontend/app/page.tsx`: 진입 페이지
 - `frontend/app/new/page.tsx`: 소스 입력 폼
 - `frontend/app/results/[id]/page.tsx`: 결과 확인 페이지
-- `frontend/components/results-client.tsx`: 분석/후속/문서/면접 버튼 및 결과 섹션
+- `frontend/components/results-client.tsx`:
+  - 분석/문서/면접 실행 버튼
+  - 후속 질문별 1:1 답변 입력 폼
+  - 후속 답변 점수 표시(입력 완성도/길이 기반 경량 점수)
+  - 생성 결과(지원동기/자기소개 초안, 경력기술서 초안, 프로젝트 소개문구 초안)
+  - 경력기술서+프로젝트 근거를 합친 `경력기술서 도우미` 통합 뷰
+  - `왜 이런 결과가 나왔나` 근거 요약
+  - 현재 상태 요약(경력 레벨/특화/보완점)
+  - 처리 중 로딩 스피너/진행 문구
+  - 강조 프로젝트는 기본 숨김 + 펼치기 UI
+
+## 로그 노출 정책
+- 트러블슈팅용 상세 실행 로그는 서버(DB) `WorkflowRun`에 저장
+- 프론트 결과 페이지는 사용자 이해를 위한 요약 정보만 노출
+- `WorkflowRun` 조회는 운영/디버깅 목적(백엔드 API 또는 DB 조회)으로 사용
+
+## 로그인/개인화 확장 시 영향 범위(계획)
+- 추가 예정:
+  - `User` 엔티티, 인증 세션/토큰 전략
+  - `Application.userId` 소유권 연결
+  - 버전형 초안 엔티티(선택)
+- 변경 예상:
+  - 조회 API에 권한 검증 추가
+  - save-first 흐름(부분 재생성/버전 비교) 중심 UX로 확장

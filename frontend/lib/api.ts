@@ -1,5 +1,17 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/v1";
 
+export class ApiError extends Error {
+  status: number;
+  details?: unknown;
+
+  constructor(message: string, status: number, details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -10,7 +22,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     cache: "no-store"
   });
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    let details: unknown = undefined;
+    let message = `API error: ${response.status}`;
+    try {
+      const body = (await response.json()) as { message?: string | string[] };
+      details = body;
+      if (Array.isArray(body.message)) {
+        message = body.message.join("\n");
+      } else if (typeof body.message === "string") {
+        message = body.message;
+      }
+    } catch {
+      // Keep default message when response is not JSON.
+    }
+    throw new ApiError(message, response.status, details);
   }
   return response.json() as Promise<T>;
 }
@@ -29,31 +54,35 @@ export async function createSource(payload: CreateSourcePayload) {
   });
 }
 
-export async function runAnalysis(applicationId: number) {
+export async function runAnalysis(applicationId: number, force = false) {
   return request("/analysis/run", {
     method: "POST",
-    body: JSON.stringify({ applicationId })
+    body: JSON.stringify({ applicationId, force })
   });
 }
 
-export async function submitFollowup(applicationId: number, answers: Array<{ questionId: string; answer: string }>) {
+export async function submitFollowup(
+  applicationId: number,
+  answers: Array<{ questionId: string; answer: string }>,
+  force = false
+) {
   return request("/followup-questions/submit", {
     method: "POST",
-    body: JSON.stringify({ applicationId: String(applicationId), answers })
+    body: JSON.stringify({ applicationId: String(applicationId), answers, force })
   });
 }
 
-export async function generateDocuments(applicationId: number, rewriteForJob = true) {
+export async function generateDocuments(applicationId: number, rewriteForJob = true, force = false) {
   return request("/generated-documents/generate", {
     method: "POST",
-    body: JSON.stringify({ applicationId: String(applicationId), rewriteForJob })
+    body: JSON.stringify({ applicationId: String(applicationId), rewriteForJob, force })
   });
 }
 
-export async function generateInterview(applicationId: number) {
+export async function generateInterview(applicationId: number, force = false) {
   return request("/interview/generate", {
     method: "POST",
-    body: JSON.stringify({ applicationId: String(applicationId) })
+    body: JSON.stringify({ applicationId: String(applicationId), force })
   });
 }
 

@@ -80,3 +80,93 @@
 - **예방 규칙**:
   1. 공통 서비스는 Global module로 관리
   2. 신규 DI 서비스 추가 시 provider/export/import 경로를 함께 점검
+
+## 2026-03-23 - Frontend build 중 EPERM `.next/trace` (진단 완료)
+- **문제**: `next build` 실행 시 `EPERM: operation not permitted, open '.next/trace'`
+- **원인**: `next dev` 실행 중 Windows 파일 잠금으로 `.next/trace` 접근 충돌
+- **조치**:
+  1. 개발 서버 실행 중에는 `build` 대신 `lint`/런타임 테스트 수행
+  2. `build` 필요 시 프론트 dev 서버를 먼저 종료 후 실행
+- **결과**: 코드 변경 자체는 `tsc --noEmit` 기준 정상
+- **예방 규칙**:
+  1. 포트/프로세스 상태 확인 후 빌드/서버 명령 분리
+  2. 동일 산출 디렉터리를 공유하는 명령(`dev`/`build`) 동시 실행 금지
+
+## 2026-03-23 - Frontend 500 (`routes-manifest.json` / chunk module not found) (해결)
+- **문제**: `/new`, `/results/:id` 접속 시 500. 로그에 `ENOENT .next/routes-manifest.json`, `Cannot find module './778.js'`
+- **원인**: Next dev 캐시 산출물(`.next`) 손상/불일치 상태에서 서버가 계속 실행됨
+- **조치**:
+  1. 포트 3000 점유 프로세스 확인
+  2. 기존 frontend dev 프로세스 종료
+  3. frontend dev 서버 단일 인스턴스로 재기동
+- **결과**: `/new`, `/results/4` 모두 200 복구
+- **예방 규칙**:
+  1. 프론트 500 발생 시 동일 명령 반복 대신 로그에서 `ENOENT`/chunk 누락 여부 먼저 확인
+  2. 캐시 산출물 오류면 기존 dev 프로세스를 종료 후 재기동
+  3. 프론트 dev 서버는 한 인스턴스만 유지
+
+## 2026-03-23 - 결과 화면 버튼 클릭 시 반응 없음처럼 보임(해결)
+- **문제**: 워크플로우 버튼 클릭 후 실패/스킵 결과가 UI에 보이지 않아 무응답처럼 인지됨
+- **원인**: 버튼 핸들러에서 API 에러/스킵 상태를 사용자 메시지로 노출하지 않음
+- **조치**:
+  1. `results-client`에 에러 메시지/액션 결과 메시지 표시 추가
+  2. 이미 생성된 단계는 프론트에서 재요청 차단 및 안내 문구 표시
+- **결과**: 클릭 후 성공/실패/스킵이 화면에 즉시 표시됨
+- **예방 규칙**:
+  1. 사용자 액션에는 반드시 가시적 성공/실패 피드백 제공
+  2. 중복 호출 가능 버튼은 상태 기반 사전 차단
+
+## 2026-03-23 - Gemini 라우팅인데 fallback 고정 출력 발생(진단 완료)
+- **문제**: `WorkflowRun.inputJson.llmRoute`는 Gemini 모델로 기록되지만 실제 결과는 `LLM API 키 미설정 상태의 기본 프로필` fallback만 반환
+- **원인**:
+  1. 실행 환경에서 `provider=gemini`로 선택됨
+  2. 그러나 실제 로딩된 환경값은 `geminiKeyPresent=false`, `openaiKeyPresent=true`
+  3. 즉, 라우팅 메타데이터는 Gemini지만, Gemini 키 미탑재로 `getModelRouter()`가 `undefined`를 반환하여 fallback 분기로 진입
+- **조치**:
+  1. `LangchainWorkflowService`에 단계별 진단 로그 추가(`LLM success`/`Fallback used`, reason 포함)
+  2. `WorkflowRun.inputJson`에 `llmExecution` 메타데이터 추가(`fallbackUsed`, `fallbackReason`, `hasProviderApiKey`)
+  3. 환경 파일 직접 파싱 보강(`.env` 경로 탐색) 및 온도 변수(`LLM_TEMPERATURE`) 우선 읽기 보강
+- **결과**: 이제 각 단계가 실제 LLM 응답인지 fallback인지 DB 로그에서 즉시 구분 가능
+- **예방 규칙**:
+  1. `llmRoute`만 보지 말고 `llmExecution.fallbackUsed`/`hasProviderApiKey`를 함께 확인
+  2. provider 변경 후 최초 1회는 서버 부팅 로그의 `geminiKeyPresent` 값을 확인
+  3. fallback 텍스트가 보이면 재시도보다 먼저 환경변수 로딩 상태를 확인
+
+## 2026-03-23 - Gemini 키 인식 후 candidate 단계만 fallback (해결)
+- **문제**: Gemini 키 인식은 정상인데 `EXTRACT_CANDIDATE` 단계만 fallback 발생
+- **원인**: 모델 출력에서 `projects[].evidence`가 문자열로 반환되어 Zod 스키마(`string[]`) 파싱 실패
+- **조치**:
+  1. candidate 체인에서 `evidence`를 `string | string[]`로 유연 파싱
+  2. 이후 항상 `string[]`로 정규화하여 최종 스키마 검증
+- **결과**: 후보자 추출 포함 전체 단계 `fallbackUsed=false` 확인
+- **예방 규칙**:
+  1. LLM structured output은 엄격 스키마 전 정규화 레이어를 둔다
+  2. 단계별 fallback 원인은 `workflowRuns.inputJson.llmExecution.fallbackReason`으로 즉시 확인한다
+
+## 2026-03-23 - 결과 화면에서 상태 파악이 어려움 (해결)
+- **문제**: 생성은 되었지만 사용자 입장에서 "왜 이렇게 나왔는지", "처리 중인지"를 판단하기 어려움
+- **원인**:
+  1. 정보 밀도가 높은 Raw JSON/UI 로그가 화면을 복잡하게 만듦
+  2. 후속 질문 입력이 자유 텍스트 1박스라 질문-답변 매핑이 불명확
+  3. LLM 처리 중 가시적인 진행 상태 표시 부족
+- **조치**:
+  1. 결과 페이지를 카드형 섹션으로 재구성
+  2. `왜 이런 결과가 나왔나` 근거 요약 섹션 추가
+  3. 후속 질문 1:1 입력 폼 도입
+  4. 로딩 스피너/진행 문구 표시
+  5. API 실행 로그/Raw JSON은 프론트에서 제거하고 서버 `WorkflowRun` 중심으로 운영
+- **결과**: 사용자 관점에서 결과 해석과 입력 흐름이 명확해짐
+- **예방 규칙**:
+  1. 사용자 화면에는 요약/행동 중심 정보만 노출
+  2. 상세 디버깅 로그는 서버 로그 저장소(`WorkflowRun`)로 분리
+
+## 2026-03-24 - Cursor 환경 이식 스크립트 실행 후 설정 미적용 (해결)
+- **문제**: `restore-env.ps1` 실행 성공 메시지가 나와도 Cursor 설정/키바인딩이 반영되지 않음
+- **원인**: 스크립트가 `backup/`, `reports/` 하위 폴더 구조를 전제로 작성됐으나, 실제 `dev-env-backup.zip`은 루트 파일 구조
+- **조치**:
+  1. 스크립트에 구조 fallback 추가 (`backup/` 없으면 루트 경로 사용)
+  2. 수정된 스크립트 재실행 후 `settings.json`, `keybindings.json` 반영 확인
+- **결과**: Cursor 설정/키바인딩 정상 복원
+- **예방 규칙**:
+  1. 복원 스크립트는 zip 내부 경로 구조를 먼저 검증
+  2. 성공 메시지 외에 실제 대상 파일 내용을 후검증

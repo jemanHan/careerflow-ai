@@ -32,6 +32,7 @@ export class InterviewService {
 
     const candidate = app.candidateProfileJson as CandidateProfile | null;
     const job = app.jobPostingJson as JobPostingProfile | null;
+    const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
     if (!candidate || !job) throw new NotFoundException("Analysis data not found.");
     const generated = (app.generatedDraftJson ?? {}) as Record<string, unknown>;
     const existingQuestions = generated.interviewQuestions;
@@ -46,11 +47,21 @@ export class InterviewService {
       return app;
     }
 
-    const questions = await this.workflow.generateInterviewQuestions(candidate, job);
+    const questions = await this.workflow.generateInterviewQuestions(
+      candidate,
+      job,
+      prioritizedProjectContext
+    );
+    const interviewRoute = this.workflow.getRoutingInfo("generateInterviewQuestions");
+    const interviewExecution = this.workflow.getExecutionDiagnostics("generateInterviewQuestions");
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
         stage: WORKFLOW_STAGE.GENERATE_INTERVIEW,
+        inputJson: {
+          llmRoute: interviewRoute,
+          llmExecution: interviewExecution
+        } as unknown as Prisma.InputJsonValue,
         outputJson: { questions } as unknown as Prisma.InputJsonValue
       }
     });

@@ -1,7 +1,7 @@
 import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { RunnableSequence } from "@langchain/core/runnables";
-import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { JobPostingProfile } from "../workflow.types";
 
@@ -13,7 +13,7 @@ const jobSchema = z.object({
   evaluationSignals: z.array(z.string())
 });
 
-export async function runJobPostingChain(llm: ChatOpenAI, jobText: string): Promise<JobPostingProfile> {
+export async function runJobPostingChain(llm: BaseChatModel, jobText: string): Promise<JobPostingProfile> {
   const parser = new JsonOutputParser<JobPostingProfile>();
   const prompt = PromptTemplate.fromTemplate(
     [
