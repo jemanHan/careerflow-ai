@@ -274,7 +274,9 @@ export default function ResultsClient({ applicationId }: Props) {
     setError("");
     setActionMessage("");
     try {
-      await generateDocuments(applicationId, true, true);
+      // 문서 초안은 generateDocuments 결과(generatedDraftJson)에만 표시된다.
+      // rewriteForJob(라이트 모델)는 UI에 직접 반영되지 않으므로 문서 생성에서는 제외해 일관성을 높인다.
+      await generateDocuments(applicationId, false, true);
       await refetch();
       setActionMessage(
         options?.regenerate
