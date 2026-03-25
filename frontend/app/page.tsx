@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { ApiError, createTestUser } from "../lib/api";
-import { getStoredTestUserId, storeTestUserId } from "../lib/test-user";
+import { clearStoredTestUserId, getStoredTestUserId, storeTestUserId } from "../lib/test-user";
 
 const TEST_USER_ID_REGEX = /^\d{3}$/;
-const TEST_USER_STORAGE_KEY = "careerflow-test-user-id";
 
 export default function HomePage() {
   const router = useRouter();
@@ -80,11 +79,7 @@ export default function HomePage() {
   }
 
   function handleLogout() {
-    try {
-      window.localStorage.removeItem(TEST_USER_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    clearStoredTestUserId();
     setIsLoggedIn(false);
     setTestUserId("");
     setMessage("로그아웃 완료");
