@@ -1,33 +1,32 @@
 # CareerFlow AI
 
-**이력서·포트폴리오·채용공고**를 같은 흐름에서 다루고, **공고 대비 분석 → 대화형 보완 → 문서 초안 → 면접 준비**까지 이어지는 문서 중심 AI 워크플로우 MVP입니다.  
-단발 생성기가 아니라 단계별 실행과 `WorkflowRun` 로그로 **근거와 재현성**을 남기는 것을 목표로 합니다.
+지원 서류와 채용공고를 **한 흐름**으로 묶어, **공고에 맞는 강·약점 정리 → 부족한 근거를 질문으로 보완 → 자기소개·경력기술서 초안 → 면접 질문까지** 이어 주는 문서 중심 AI 워크플로 제품입니다.
+
+한 번에 뽑아 내는 생성기가 아니라, **단계마다 근거를 남기고** 같은 지원 건을 다시 열어 이어 갈 수 있게 만든 것이 핵심입니다.
 
 ---
 
-## 사용 흐름 (제품 관점)
+## 이렇게 사용합니다
 
-1. **테스트 ID** (`숫자 3자리`) 발급 또는 로그인 → 상단 프로필에서 현재 ID·최근 ID 확인 가능  
-2. **`/new`** 에서 이력서·포트폴리오·강조 프로젝트(선택)·채용공고 붙여넣기 → 워크플로 이름 저장(선택)  
-3. **분석 시작** → 후보/JD 추출, 갭 분석, 후속 질문 생성 (`POST /v1/analysis/run`)  
-4. **`/results/[id]`** 에서 공고 대비 장·단점 스냅샷 확인 → 보완 질문에 답하면 프로필·갭·스냅샷 갱신  
-5. **문서 초안 생성** → 지원동기/자기소개 초안 + 경력기술서 초안 (**2종**, `POST /v1/generated-documents/generate`)  
-6. **면접 대비 리포트** → 핵심 3 + 심화 2 (`POST /v1/interview/generate`)  
-7. **`/my`** 에서 같은 테스트 ID로 저장된 워크플로 목록 재진입
-
-> 데모용 **비인증** 테스트 계정입니다. 정식 로그인·권한 모델은 범위 밖입니다.
+1. **로그인** — 편의를 위해 가벼운 **데모 세션**으로 시작할 수 있습니다. 상단 프로필에서 현재 세션과 최근에 쓴 계정을 바로 확인할 수 있습니다.  
+2. **플로우 생성 페이지**에서 이력서·포트폴리오·강조하고 싶은 프로젝트(선택)·채용공고를 붙여 넣고, 필요하면 이 작업의 이름만 정리해 둡니다.  
+3. **분석**을 실행하면 입력을 바탕으로 후보 요약, 공고 요구, 갭(부족한 신호), 이어서 받을 **보완 질문**이 준비됩니다.  
+4. **결과 페이지**에서 공고 기준으로 정리된 강점·보완 포인트를 보고, 질문에 답하면 프로필과 분석 요약이 다시 맞춰집니다.  
+5. **문서 초안**으로 지원동기·자기소개와 경력기술서 형태의 초안 **두 가지**를 받을 수 있습니다.  
+6. **면접 준비**에서는 핵심 질문과 심화 질문, 답변 준비 포인트를 함께 제공합니다.  
+7. **나의 CareerFlow**(저장된 흐름 목록)에서 진행 중이거나 끝난 작업을 다시 열어 이어갈 수 있습니다.
 
 ---
 
-## 핵심 기능
+## 무엇이 다른가
 
-| 영역 | 설명 |
-|------|------|
-| 단계형 오케스트레이션 | 후보 추출, JD 추출, 갭 탐지, 보완 질문, 문서/면접 생성을 체인 단위로 분리 |
-| 설명 가능한 분석 | `fitAnalysisJson`에 공고 대비 강점·부족·보완 방향을 요약(수치 점수 과장 없음) |
-| 운영 제어 | 분당 레이트리밋, 동일 `applicationId+stage` 실행 락, 문서/면접 단계별 재생성 스킵(선택) |
-| 문서 생성 실패 시 | LLM 실패 시 **내부 placeholder를 사용자에게 보여주지 않음** → HTTP 503, 기존 유효 초안은 DB 유지 |
-| 분석 재실행 | `POST /analysis/run` 호출마다 **전체 분석 파이프라인 실행** (`force`는 API 호환용으로만 유지) |
+| | |
+|--|--|
+| **단계형 실행** | 추출·갭 분석·보완·문서·면접을 한 덩어리 프롬프트가 아니라 단계로 나누어 실행합니다. |
+| **설명 가능한 요약** | 공고 대비 강·약점과 보완 방향을 문장형으로 정리합니다(단일 점수로 압축하지 않음). |
+| **운영·안정성** | 호출 제한, 동시 실행 제어, 문서 단계의 재생성 스킵 등으로 반복 비용과 충돌을 줄입니다. |
+| **실패 시** | 문서 생성이 막히면 내부용 placeholder 문구를 그대로 보여 주지 않고, 기존에 쌓인 유효한 초안은 유지하는 쪽을 우선합니다. |
+| **분석 요청** | 분석을 다시 누르면 그때마다 전체 분석 파이프라인을 돌립니다(저장된 결과만 보는 것은 조회 화면에서). |
 
 ---
 
@@ -76,7 +75,7 @@ npm run dev
 | LLM | `GEMINI_API_KEY` / `OPENAI_API_KEY` | 필수 |
 | LLM | `GEMINI_DEFAULT_MODEL` | light(추출·갭·후속 등, 리라이트 보조) |
 | LLM | `GEMINI_HIGH_QUALITY_MODEL` | quality(문서 생성·면접 리포트) |
-| LLM | `GEMINI_PREMIUM_MODEL` | (선택) 공고 대비 분석 4단계에 premium 라우트 |
+| LLM | `GEMINI_PREMIUM_MODEL` | (선택) 공고 대비 분석 상위 모델 |
 | Backend | `DATABASE_URL` | PostgreSQL 연결 문자열 |
 | Backend | `CORS_ORIGIN` | 프론트 Origin (콤마 구분). **production에서 비우면 브라우저 CORS 비활성** |
 | Backend | `PORT` | 기본 4000 |
@@ -110,15 +109,15 @@ npm run dev
 
 ---
 
-## 테스트 계정·API 헤더
+## 개발·연동 참고
 
-- 테스트 ID는 **`x-test-user-id`** 헤더(프론트는 `localStorage`와 동기화)와 함께 동작합니다.  
-- `GET /v1/source-documents/by-test-user/:testUserId` 는 **헤더의 ID와 URL의 `testUserId`가 같아야** 합니다.  
-- 워크플로 제목 등 메타: `PATCH /v1/source-documents/:id/meta`  
+- 데모 세션은 브라우저에서 활성 계정을 **`x-test-user-id`** 헤더로 보내며, 목록 조회 시에는 요청 경로의 사용자와 헤더가 일치해야 합니다.  
+- 워크플로 제목 등 표시 정보는 `PATCH /v1/source-documents/:id/meta` 로 갱신합니다.  
+- 단계별 실행 기록은 DB의 `WorkflowRun` 등으로 추적합니다. 상세는 [docs/architecture.md](docs/architecture.md) 참고.
 
 ---
 
-## API·DB 문서
+## 문서
 
 | 문서 | 내용 |
 |------|------|
@@ -138,17 +137,9 @@ npm run dev
 
 ---
 
-## API 엔드포인트 (MVP 요약)
+## REST API 개요
 
-- `POST /v1/source-documents/test-user` — 테스트 ID 발급  
-- `POST /v1/source-documents` — 입력 저장·Application 생성  
-- `GET /v1/source-documents/by-test-user/:testUserId` — 목록 (`x-test-user-id` 필요)  
-- `GET /v1/source-documents/:id` — 상세 + `workflowRuns`  
-- `PATCH /v1/source-documents/:id` / `PATCH /v1/source-documents/:id/meta` — 원문·메타 수정  
-- `POST /v1/source-documents/:id/link-my-workflow` — 활성 테스트 ID에 워크플로 연결  
-- `POST /v1/analysis/run` — 분석 실행  
-- `POST /v1/followup-questions/submit` — 보완 답변 반영  
-- `POST /v1/generated-documents/generate` — 문서 초안 생성  
-- `POST /v1/interview/generate` — 면접 리포트 생성  
+엔드포인트 전체와 필드는 [docs/api-spec.md](docs/api-spec.md) 를 기준으로 합니다.
 
-전체는 [docs/api-spec.md](docs/api-spec.md) 참고.
+- 세션·소스 생성·조회, 분석 실행, 보완 답변 제출, 문서 초안 생성, 면접 생성 등  
+- 예: `POST /v1/analysis/run`, `POST /v1/generated-documents/generate`, `POST /v1/interview/generate`  
