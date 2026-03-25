@@ -102,6 +102,8 @@ export default function MyCareerFlowPage() {
     setLoading(true);
     setErrorMessage("");
     try {
+      // API는 URL의 testUserId와 x-test-user-id 헤더(= localStorage)가 같아야 함. 폼에 다른 ID를 입력한 경우 먼저 동기화.
+      storeTestUserId(normalized);
       const result = await listMyWorkflows(normalized);
       setItems(result.applications);
       setTestUserId(result.id);
