@@ -20,7 +20,8 @@ export class AnalysisService {
     private readonly lock: WorkflowExecutionLockService
   ) {}
 
-  async run(applicationId: number, force: boolean, requesterKey: string) {
+  /** `force`는 API 호환용으로 유지. 분석 스킵은 하지 않음. */
+  async run(applicationId: number, _force: boolean, requesterKey: string) {
     this.limiter.checkOrThrow({
       key: `analysis:${requesterKey}`,
       maxInWindow: 5,
@@ -32,24 +33,7 @@ export class AnalysisService {
     const app = await this.prisma.application.findUnique({ where: { id: applicationId } });
     if (!app) throw new NotFoundException("Application not found.");
 
-    if (
-      !force &&
-      app.status === "ANALYZED" &&
-      app.candidateProfileJson &&
-      app.jobPostingJson &&
-      app.gapAnalysisJson &&
-      app.followUpQuestions.length > 0 &&
-      app.fitAnalysisJson != null
-    ) {
-      await this.prisma.workflowRun.create({
-        data: {
-          applicationId,
-          stage: WORKFLOW_STAGE.PARSE_SOURCE,
-          errorMessage: "SKIPPED_REUSE_EXISTING_ANALYSIS"
-        }
-      });
-      return app;
-    }
+    // 매 `analysis/run` 호출마다 전체 LLM 파이프라인 실행. 저장된 결과 재조회는 GET으로만 한다.
 
     const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
     const otherProjects = app.projectDescriptions.slice(1);
