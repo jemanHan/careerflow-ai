@@ -133,5 +133,5 @@ LangChain을 쓰면 단계별 프롬프트/파서/실행을 체인 단위로 분
 ## 관련 문서
 
 - `docs/architecture.md`
-- `docs/portfolio-points.md`
-- `docs/next-roadmap.md`
+- `docs/project-overview.md`
+- `docs/api-spec.md`

@@ -7,3 +7,13 @@ dist/
 *.tsbuildinfo
 *.zip
 reference-main-snapshot/
+
+# 로컬 전용 문서(포폴·개발일지·에디터 규칙·개인 환경) — 원격 저장소에 포함하지 않음
+docs/portfolio*.md
+docs/dev-log.md
+docs/day*-dev-log-*.md
+docs/cursor*.md
+docs/agent-rules.md
+docs/next-roadmap.md
+docs/performance-metrics.md
+docs/dev-env.md

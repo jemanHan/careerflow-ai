@@ -87,26 +87,19 @@ npm run dev
   - 동일 실패 명령 반복 전 원인 진단 우선
 
 ## Docs
-- `docs/portfolio-case-study.md` (포트폴리오/면접용: 과정·삭제·모델 변경·문제 해결 요약)
-- `docs/project-overview.md`
-- `docs/job-alignment.md`
+- `docs/project-overview.md` — 제품 범위·흐름
+- `docs/job-alignment.md` — 요구사항↔구현 매핑(참고)
 - `docs/architecture.md`
 - `docs/api-spec.md`
 - `docs/db-schema.md`
 - `docs/troubleshooting.md`
-- `docs/dev-log.md`
-- `docs/portfolio-points.md`
-- `docs/portfolio-core.md` (포트폴리오용 핵심 로직/의사결정 요약)
-- `docs/langchain-in-this-project.md` (LangChain 적용 범위/비범위 설명)
-- `docs/next-roadmap.md`
-- `docs/performance-metrics.md`
-- `docs/agent-rules.md` (runtime/documentation single rules source)
+- `docs/langchain-in-this-project.md` — LangChain 적용 범위
 
 ## Repository Hygiene
 - 커밋/공유 제외 권장:
   - `.env`, `.env.local`, 실제 API 키/DB 접속 문자열
   - `node_modules/`, `dist/`, `.next/`, 실행 로그 파일
   - 개인 식별 가능 원문 데이터(이력서/연락처 포함 샘플)
+  - 로컬 전용 문서(포폴·개발일지·에디터 규칙 등)는 `.gitignore`에 명시됨
 - 공유 가능:
-  - 코드, 스키마, 문서, `.env.example`
-  - 트러블슈팅/운영 규칙/지표 문서(민감정보 마스킹 전제)
+  - 코드, 스키마, 위 Docs 목록, `.env.example`

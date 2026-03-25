@@ -17,12 +17,12 @@
 | 배포 가능성/운영 준비 | `README.md`, `.env.example`, `docs/api-spec.md`, `docs/architecture.md` | 실행 절차, 환경변수, API/아키텍처 문서화 | "코드뿐 아니라 재현 가능한 실행/배포 문서를 함께 제공해 실무 인수인계 수준으로 정리했습니다." |
 | End-to-End 오너십 | 루트 문서 + 백엔드 구현 + 이후 프론트 연결 | 문제정의, 설계, 구현, 저장, 문서화, 배포 준비를 단일 프로젝트로 수행 | "요구사항 해석부터 제품 구현/검증/문서화까지 전 과정을 직접 리딩했습니다." |
 | Product Thinking | 후속 질문 단계, 채용공고 맞춤 리라이트 단계 | '정보 부족 탐지→질문→재생성' 루프와 타겟 맞춤 산출물 최적화 | "사용자 목표(합격 가능성 향상)에 맞춰 품질 개선 루프를 제품 기능으로 구현했습니다." |
-| PM/PO 유사 오너십 | `docs/project-overview.md`, `docs/dev-log.md`, `docs/portfolio-points.md` | 범위 통제(MVP strict), 우선순위, 일정 계획, 변경 로그 관리 | "7일 MVP 제약 내에서 must/nice/cut을 관리하며 실행 가능한 로드맵으로 운영했습니다." |
+| PM/PO 유사 오너십 | `docs/project-overview.md`, `README.md` | 범위 통제(MVP strict), 우선순위, 실행 문서화 | "MVP 범위를 문서와 코드로 정리해 우선순위에 맞게 구현했습니다." |
 | 문제 분해(Problem Decomposition) | 아키텍처 및 LangChain 단계 설계 | 파싱→추출→비교→갭탐지→질문→재생성→생성→리라이트로 분해 | "복잡한 생성 문제를 독립 검증 가능한 단계로 분해해 품질과 설명 가능성을 높였습니다." |
 | 실무형 자동화 가치 | `POST /source-documents`, `/analysis/run`, `/followup-questions/submit`, `/generated-documents/generate`, `/interview/generate` | 채용 준비에 반복 발생하는 문서 작성/정합성 점검 작업 자동화 | "반복적이고 시간이 많이 드는 지원서 커스터마이징 업무를 자동화하는 도구로 설계했습니다." |
 | 운영 안정성/비용 통제 | `request-rate-limiter.service.ts`, `workflow-execution-lock.service.ts` | 레이트 제한(429), 동시 실행 락(409), 중복 재실행 스킵 | "AI API 오남용을 방지하고, 동일 요청 중복 실행을 억제해 운영 안정성을 확보했습니다." |
 | LLM/Agent/RAG 이해도 (과장 없는 수준) | 체인 기반 오케스트레이션, RAG 제외 의사결정 | MVP에서 RAG/멀티에이전트를 의도적으로 제외하고 체인 중심 구현 | "요구 가치 대비 복잡도를 고려해 RAG를 배제하고 체인 품질을 먼저 완성하는 선택을 했습니다." |
-| 성능 개선/운영 지표 관리 | `workflowRuns` + `docs/performance-metrics.md` | fallback 원인(키/쿼터/파싱) 기록, 핵심 7단계 성공률 추적 | "문제 발생 시 감으로 재시도하지 않고, 단계별 메타데이터로 원인을 분류한 뒤 개선해 최근 핵심 실행 7/7 성공을 달성했습니다." |
+| 성능 개선/운영 지표 관리 | `WorkflowRun` + `docs/troubleshooting.md` | 단계별 LLM 메타데이터·fallback 기록, 운영 이슈(429 등) 문서화 | "단계 로그와 트러블슈팅 문서로 원인을 추적 가능하게 두었습니다." |
 
 ## 인터뷰용 핵심 스토리라인
 
