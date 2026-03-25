@@ -69,9 +69,9 @@ export class AnalysisService {
       }
     });
 
-    // 최초 ANALYZED 전에만 premium(재실행·force 포함, 이미 ANALYZED면 flash/high만 사용). 공고 대비 장·단점 파이프라인.
+    // 공고 대비 장·단점 파이프라인 4단계: 매 분석 실행마다 GEMINI_PREMIUM_MODEL 사용(설정 시). 재실행·force 동일.
     const initialFitCtx: FitAnalysisRoutingContext = {
-      usePremiumFitPass: app.status !== "ANALYZED"
+      usePremiumFitPass: true
     };
 
     const candidate = await this.workflow.extractCandidateProfile(

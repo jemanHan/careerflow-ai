@@ -23,8 +23,8 @@ import {
 
 export type FitAnalysisRoutingContext = {
   /**
-   * true: 이 애플리케이션의 최초 공고 대비 분석(첫 ANALYZED 전)에만 Gemini에서 GEMINI_PREMIUM_MODEL 사용.
-   * 재분석·보완 후 갭 재계산 등에서는 false/미전달.
+   * true: 공고 대비 분석 파이프라인(후보·JD·갭·후속질문 4단계)에서 `GEMINI_PREMIUM_MODEL` 사용.
+   * 재실행·force 포함, 매 분석 실행마다 동일하게 적용(미설정 시 premium 경로 비활성).
    */
   usePremiumFitPass?: boolean;
 };
@@ -455,7 +455,7 @@ export class LangchainWorkflowService {
   }
 
   /**
-   * Gemini: 최초 공고 대비 분석 4단계만 optional premium, 문서·면접은 항상 high, 리라이트는 light(보조).
+   * Gemini: 공고 대비 분석 4단계는 optional premium(또는 light), 문서·면접은 quality, 리라이트는 light(보조).
    * OpenAI: 문서·면접만 high, 나머지 light (premium 미사용).
    */
   resolveRouting(step: WorkflowStep, ctx?: FitAnalysisRoutingContext): RoutingInfo {
@@ -481,11 +481,19 @@ export class LangchainWorkflowService {
       return { provider: "gemini", route: "premium", model: this.geminiPremiumModel };
     }
 
+    if (step === "generateDocuments" || step === "generateInterviewQuestions") {
+      return { provider: "gemini", route: "quality", model: this.highQualityModel };
+    }
+
     if (step === "rewriteForTargetJob") {
       return { provider: "gemini", route: "light", model: this.defaultModel };
     }
 
-    return { provider: "gemini", route: "quality", model: this.highQualityModel };
+    if (fitPipelineSteps.includes(step)) {
+      return { provider: "gemini", route: "light", model: this.defaultModel };
+    }
+
+    return { provider: "gemini", route: "light", model: this.defaultModel };
   }
 
   getRoutingInfo(step: WorkflowStep, ctx?: FitAnalysisRoutingContext): RoutingInfo {

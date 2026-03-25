@@ -100,16 +100,15 @@ backend/
   - 면접 리포트는 `whyAsked`(근거 연결), `answerPoints`(실전 준비), `caution`(과장 리스크)를 구조화해 출력
 
 ## 모델 라우팅 (현재 기준)
-- **역할 기반 이중 라우트**를 유지한다(기본·고품질을 한 모델로 합치지 않음). 무료 티어는 모델별 일일 한도가 분리되어 있어, 작업·비용·품질을 분리해 설명·포트폴리오 가치를 보존한다.
+- **역할 기반 라우트**를 유지한다(기본·고품질·선택 premium을 한 모델로 합치지 않음).
+- 선택 premium(`GEMINI_PREMIUM_MODEL`) — **premium**:
+  - `POST /analysis/run`의 공고 대비 파이프라인 4단계(후보 추출·JD 추출·갭·후속질문)에 **매 실행** 적용(설정 시). 미설정 시 아래 light 경로 사용.
 - 기본 모델(`GEMINI_DEFAULT_MODEL`) — **light / Gemini Flash Lite 계열**:
-  - 후보자 프로필 추출
-  - 채용공고 분석
-  - 갭 탐지
-  - 후속 질문 생성(서류 보완용)
+  - premium 미사용 시: 후보 추출·채용공고 분석·갭 탐지·후속 질문
   - 면접 대비 리포트 생성
 - 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL`) — **quality / Gemini Flash 계열**:
   - 문서 3종 생성
-  - 채용공고 맞춤 리라이트
+- 리라이트 보조 단계는 **light**(`GEMINI_DEFAULT_MODEL`) — 채용공고 맞춤 리라이트
 - provider를 `openai`로 바꾸면 `OPENAI_*` 모델 키를 사용
 - API 키 미설정/할당량/파싱 오류 시 fallback 응답을 반환하고 `llmExecution`에 원인을 기록
 
@@ -117,8 +116,8 @@ backend/
 - `GET /v1/source-documents/:id`의 `workflowRuns`를 확인
 - 각 LLM 단계의 `inputJson.llmRoute`에 아래 값이 기록됨:
   - `provider` (gemini/openai)
-  - `route` (light/quality)
-  - `model` (실제 사용 모델명 — `GEMINI_DEFAULT_MODEL` 또는 `GEMINI_HIGH_QUALITY_MODEL` 값과 일치해야 함)
+  - `route` (light/quality/premium)
+  - `model` (실제 사용 모델명 — 해당 라우트의 env 모델명과 일치해야 함)
 - 실제 실행 결과 확인은 `inputJson.llmExecution`으로 판단:
   - `fallbackUsed` (true/false)
   - `fallbackReason` (실패 원인)
@@ -127,14 +126,14 @@ backend/
 ### `WorkflowRun.stage`별 기대 라우트 (Gemini)
 | stage | route | 용도 |
 | --- | --- | --- |
-| `EXTRACT_CANDIDATE` | light | 후보 추출 |
-| `EXTRACT_JOB` | light | 채용공고 분석 |
-| `DETECT_GAP` | light | 갭 탐지 |
-| `GENERATE_FOLLOW_UP` | light | 후속 질문 생성 |
+| `EXTRACT_CANDIDATE` | premium(설정 시) / light | 후보 추출 |
+| `EXTRACT_JOB` | premium(설정 시) / light | 채용공고 분석 |
+| `DETECT_GAP` | premium(설정 시) / light | 갭 탐지 |
+| `GENERATE_FOLLOW_UP` | premium(설정 시) / light | 후속 질문 생성 |
 | `REGENERATE_CANDIDATE` | light | 후속 답변 반영 시 프로필 재생성(`extractCandidateProfile`과 동일 라우트) |
 | `GENERATE_DRAFTS` | quality | 문서 3종 |
 | `GENERATE_INTERVIEW` | light | 면접 질문 |
-| `REWRITE_FOR_JOB` | quality | 채용공고 맞춤 리라이트 |
+| `REWRITE_FOR_JOB` | light | 채용공고 맞춤 리라이트 |
 | `PARSE_SOURCE` | (LLM 없음) | 원문 결합만 |
 
 ## API 과호출 방지 설계(MVP)

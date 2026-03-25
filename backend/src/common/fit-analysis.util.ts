@@ -55,6 +55,31 @@ function areSemanticallyDuplicate(a: string, b: string): boolean {
   return uni > 0 && inter / uni >= 0.55;
 }
 
+/** 토큰 겹침이 낮아도 같은 직무 주제(배포·운영·LLM 등)면 강점/약점에 동시에 두지 않는다 */
+const TOPIC_OVERLAP_BUCKETS: string[][] = [
+  ["aws", "gcp", "azure", "배포", "운영", "인프라", "devops", "docker", "kubernetes", "k8s", "cloud", "ec2", "s3", "vercel", "배포환경", "운영환경", "인프라구성"],
+  ["langchain", "llm", "생성형", "gemini", "openai", "프롬프트", "워크플로", "워크플로우", "체인", "rag", "에이전트", "agent"],
+  ["nestjs", "node", "api", "백엔드", "postgresql", "prisma", "rest", "graphql"],
+  ["react", "next", "nextjs", "프론트", "tailwind", "typescript", "javascript"]
+];
+
+function topicBucketOverlap(a: string, b: string): boolean {
+  const ta = tokenSet(a);
+  const tb = tokenSet(b);
+  for (const bucket of TOPIC_OVERLAP_BUCKETS) {
+    const hitA = bucket.some((t) => ta.has(t));
+    const hitB = bucket.some((t) => tb.has(t));
+    if (hitA && hitB) return true;
+  }
+  return false;
+}
+
+function signalsContradictStrengthAndWeak(strength: string, weak: string): boolean {
+  if (areSemanticallyDuplicate(strength, weak)) return true;
+  if (topicBucketOverlap(strength, weak)) return true;
+  return false;
+}
+
 function dedupePhrases(phrases: string[], max: number): string[] {
   const cleaned = phrases.map((p) => p.replace(/\s+/g, " ").trim()).filter((p) => p.length > 0);
   const out: string[] = [];
@@ -139,10 +164,13 @@ function sanitizeStoredGapForSnapshot(gap: GapAnalysis): GapAnalysis {
   }
 
   matched = dedupePhrases(matched, 8).filter(isMeaningfulSignal);
+  const weakNoMatchOverlap = dedupePhrases(rawWeak, 10).filter(
+    (w) => !matched.some((m) => signalsContradictStrengthAndWeak(m, w))
+  );
   return {
     matchedSignals: matched,
     missingSignals: dedupePhrases(rawMissing, 10),
-    weakEvidence: dedupePhrases(rawWeak, 10)
+    weakEvidence: weakNoMatchOverlap
   };
 }
 
@@ -238,12 +266,14 @@ export function finalizeGapAnalysis(
 
   matched = dedupePhrases(matched, 8).filter(isMeaningfulSignal);
   const missingSignals = dedupePhrases(nextMissing, 10);
-  const weakEvidence = dedupePhrases(nextWeak, 10);
+  let weakEvidence = dedupePhrases(nextWeak, 10);
 
   for (const m of missingSignals) {
     const idx = weakEvidence.findIndex((w) => areSemanticallyDuplicate(w, m));
     if (idx >= 0) weakEvidence.splice(idx, 1);
   }
+
+  weakEvidence = weakEvidence.filter((w) => !matched.some((m) => signalsContradictStrengthAndWeak(m, w)));
 
   return {
     matchedSignals: matched,
@@ -390,10 +420,15 @@ export function computeFitAnalysisSnapshot(
 
   const strengthsHighlight = dedupePhrases([...fromMatched, ...jobAlignedExtras], 14).slice(0, 8);
 
-  const weakAreas =
-    weakSignals.length > 0 ? dedupePhrases(weakSignals, 12).slice(0, 10) : ["특이 사항 없음"];
+  const weakDeduped = dedupePhrases(weakSignals, 12);
+  const weakAreasFiltered = weakDeduped.filter(
+    (w) => !strengthsHighlight.some((s) => signalsContradictStrengthAndWeak(s, w))
+  );
 
-  const improvementPoints = buildThemedImprovementPoints(missingSignals, weakSignals, 4);
+  const weakAreas =
+    weakAreasFiltered.length > 0 ? weakAreasFiltered.slice(0, 10) : ["특이 사항 없음"];
+
+  const improvementPoints = buildThemedImprovementPoints(missingSignals, weakAreasFiltered, 4);
 
   return {
     analysisPanelTitle: "공고 대상 장·단점 분석",
