@@ -669,7 +669,8 @@ export class LangchainWorkflowService {
   async detectGaps(
     candidate: CandidateProfile,
     job: JobPostingProfile,
-    ctx?: FitAnalysisRoutingContext
+    ctx?: FitAnalysisRoutingContext,
+    rawApplicationText?: string
   ): Promise<GapAnalysis> {
     const step: WorkflowStep = "detectGaps";
     const routing = this.resolveRouting(step, ctx);
@@ -690,7 +691,9 @@ export class LangchainWorkflowService {
               10
             )
           },
-          candidate
+          candidate,
+          rawApplicationText,
+          job
         )
       );
     }
@@ -702,7 +705,9 @@ export class LangchainWorkflowService {
           missingSignals: sanitizeSignalsForUi(result.missingSignals ?? [], 10),
           weakEvidence: sanitizeSignalsForUi(result.weakEvidence ?? [], 10)
         },
-        candidate
+        candidate,
+        rawApplicationText,
+        job
       );
       this.markExecution(step, routing, {
         fallbackUsed: false,
@@ -725,7 +730,9 @@ export class LangchainWorkflowService {
               10
             )
           },
-          candidate
+          candidate,
+          rawApplicationText,
+          job
         )
       );
     }

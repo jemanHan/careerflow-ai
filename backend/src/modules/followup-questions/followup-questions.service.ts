@@ -74,7 +74,8 @@ export class FollowupQuestionsService {
     if (!job) {
       throw new NotFoundException("Job posting analysis not found. Run fit analysis first.");
     }
-    const newGap = await this.workflow.detectGaps(updated, job);
+    const rawBundle = [app.resumeText, app.portfolioText, ...(app.projectDescriptions ?? [])].filter(Boolean).join("\n\n");
+    const newGap = await this.workflow.detectGaps(updated, job, undefined, rawBundle);
     const gapRoute = this.workflow.getRoutingInfo("detectGaps");
     const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps");
     await this.prisma.workflowRun.create({
@@ -90,7 +91,7 @@ export class FollowupQuestionsService {
       }
     });
 
-    const fitAnalysis = computeFitAnalysisSnapshot(newGap as GapAnalysis, updated, job);
+    const fitAnalysis = computeFitAnalysisSnapshot(newGap as GapAnalysis, updated, job, rawBundle);
 
     return this.prisma.application.update({
       where: { id: applicationId },

@@ -108,7 +108,7 @@ export class AnalysisService {
       }
     });
 
-    const gap = await this.workflow.detectGaps(candidate, job, initialFitCtx);
+    const gap = await this.workflow.detectGaps(candidate, job, initialFitCtx, sourceText);
     const gapRoute = this.workflow.getRoutingInfo("detectGaps", initialFitCtx);
     const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps", initialFitCtx);
     await this.prisma.workflowRun.create({
@@ -123,7 +123,7 @@ export class AnalysisService {
       }
     });
 
-    const fitAnalysis = computeFitAnalysisSnapshot(gap as GapAnalysis, candidate, job);
+    const fitAnalysis = computeFitAnalysisSnapshot(gap as GapAnalysis, candidate, job, sourceText);
     const isLimitedQuality =
       (extractCandidateExecution.fallbackUsed || extractJobExecution.fallbackUsed || gapExecution.fallbackUsed) &&
       (gap.matchedSignals?.length ?? 0) === 0 &&

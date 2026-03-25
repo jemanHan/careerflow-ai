@@ -80,6 +80,35 @@ function signalsContradictStrengthAndWeak(strength: string, weak: string): boole
   return false;
 }
 
+/** 단일 토큰 기술 키워드 — isMeaningfulSignal·강점 병합에서 공통 사용 */
+const BARE_TECH_TOKENS = new Set([
+  "typescript",
+  "javascript",
+  "nestjs",
+  "react",
+  "nextjs",
+  "next js",
+  "postgresql",
+  "prisma",
+  "aws",
+  "docker",
+  "kubernetes",
+  "langchain",
+  "python",
+  "sql",
+  "figma",
+  "ga4",
+  "seo",
+  "rbac",
+  "oauth2",
+  "looker",
+  "tableau",
+  "excel",
+  "notion",
+  "jira",
+  "slack"
+]);
+
 function dedupePhrases(phrases: string[], max: number): string[] {
   const cleaned = phrases.map((p) => p.replace(/\s+/g, " ").trim()).filter((p) => p.length > 0);
   const out: string[] = [];
@@ -95,33 +124,6 @@ function dedupePhrases(phrases: string[], max: number): string[] {
 function isMeaningfulSignal(value: string): boolean {
   const n = normalizeSignal(value);
   if (!n || n.length < 2) return false;
-  const strongSingleTokens = new Set([
-    "typescript",
-    "javascript",
-    "nestjs",
-    "react",
-    "nextjs",
-    "next js",
-    "postgresql",
-    "prisma",
-    "aws",
-    "docker",
-    "kubernetes",
-    "langchain",
-    "python",
-    "sql",
-    "figma",
-    "ga4",
-    "seo",
-    "rbac",
-    "oauth2",
-    "looker",
-    "tableau",
-    "excel",
-    "notion",
-    "jira",
-    "slack"
-  ]);
   const stop = new Set([
     "채용",
     "채용합니다",
@@ -146,7 +148,7 @@ function isMeaningfulSignal(value: string): boolean {
     "product",
     "engineer"
   ]);
-  if (!n.includes(" ") && !strongSingleTokens.has(n)) return false;
+  if (!n.includes(" ") && !BARE_TECH_TOKENS.has(n)) return false;
   if (stop.has(n)) return false;
   if (/^\d+$/.test(n)) return false;
   return true;
@@ -174,15 +176,51 @@ function sanitizeStoredGapForSnapshot(gap: GapAnalysis): GapAnalysis {
   };
 }
 
-function buildCandidateCorpus(candidate: CandidateProfile | null | undefined): string {
-  if (!candidate) return "";
-  const chunks: string[] = [
-    candidate.summary ?? "",
-    ...(candidate.strengths ?? []),
-    ...(candidate.experiences ?? []).flatMap((exp) => [exp.title, exp.impact, ...(exp.techStack ?? [])]),
-    ...(candidate.projects ?? []).flatMap((p) => [p.name, p.description, ...(p.evidence ?? [])])
-  ].filter(Boolean);
-  return normalizeSignal(chunks.join(" "));
+const RAW_CORPUS_MAX_CHARS = 120_000;
+
+function buildCandidateCorpus(candidate: CandidateProfile | null | undefined, rawSourceText?: string): string {
+  const chunks: string[] = [];
+  if (candidate) {
+    chunks.push(
+      candidate.summary ?? "",
+      ...(candidate.strengths ?? []),
+      ...(candidate.experiences ?? []).flatMap((exp) => [exp.title, exp.impact, ...(exp.techStack ?? [])]),
+      ...(candidate.projects ?? []).flatMap((p) => [p.name, p.description, ...(p.evidence ?? [])])
+    );
+  }
+  if (rawSourceText?.trim()) {
+    chunks.push(rawSourceText.slice(0, RAW_CORPUS_MAX_CHARS));
+  }
+  return normalizeSignal(chunks.filter(Boolean).join(" "));
+}
+
+/** 영·숫자 앵커(aws, ec2, cloudfront …) — 신호 문장에서 추가로 코퍼스와 대조 */
+function extractAlphanumericAnchors(signal: string): string[] {
+  const out = new Set<string>();
+  const re = /[a-z][a-z0-9.\-]{1,24}/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(signal)) !== null) {
+    const t = m[0].toLowerCase();
+    if (t.length >= 2) out.add(t);
+  }
+  return [...out];
+}
+
+/** 신호가 코퍼스에 얼마나 뚜렷이 ‘박혀 있는지’ (한국어 2글자 토큰 포함) */
+function evidenceHitRatio(signal: string, corpus: string): number {
+  const normalized = normalizeSignal(signal);
+  if (!normalized) return 0;
+  if (corpus.includes(normalized)) return 1;
+
+  const tokens = normalized.split(/\s+/).filter((t) => t.length >= 2);
+  const anchors = extractAlphanumericAnchors(signal).map((a) => a.toLowerCase());
+  const allTokens = [...new Set([...tokens, ...anchors])];
+  if (allTokens.length === 0) return 0;
+  let hits = 0;
+  for (const t of allTokens) {
+    if (t.length >= 2 && corpus.includes(t)) hits += 1;
+  }
+  return hits / allTokens.length;
 }
 
 function classifyEvidence(signal: string, corpus: string): EvidenceStrength {
@@ -190,12 +228,28 @@ function classifyEvidence(signal: string, corpus: string): EvidenceStrength {
   if (!normalized) return "missing";
   if (corpus.includes(normalized)) return "explicit_strong";
 
-  const tokens = normalized.split(" ").filter((t) => t.length >= 3);
-  if (tokens.length === 0) return "missing";
-  const matchedTokens = tokens.filter((token) => corpus.includes(token)).length;
-  if (matchedTokens >= Math.max(2, Math.ceil(tokens.length * 0.6))) return "partial";
-  if (matchedTokens > 0) return "weak";
+  const ratio = evidenceHitRatio(signal, corpus);
+  if (ratio >= 0.72) return "explicit_strong";
+  if (ratio >= 0.38) return "partial";
+  if (ratio >= 0.14) return "weak";
   return "missing";
+}
+
+function signalMatchesJobPreferredOnly(job: JobPostingProfile | undefined, label: string): boolean {
+  if (!job?.preferredSkills?.length) return false;
+  const requiredLike = [
+    ...(job.requiredSkills ?? []),
+    ...(job.responsibilities ?? []),
+    ...(job.evaluationSignals ?? [])
+  ];
+  const pref = job.preferredSkills.map((s) => normalizeSignal(String(s)));
+  const ln = normalizeSignal(label);
+  const hitsPreferred = pref.some((p) => p && (ln.includes(p) || p.includes(ln) || ln === p));
+  const hitsRequired = requiredLike.some((r) => {
+    const rn = normalizeSignal(String(r));
+    return rn && (ln.includes(rn) || rn.includes(ln) || areSemanticallyDuplicate(label, String(r)));
+  });
+  return hitsPreferred && !hitsRequired;
 }
 
 function clusterPhrases(items: string[]): string[][] {
@@ -228,9 +282,11 @@ function pickCanonical(cluster: string[]): string {
  */
 export function finalizeGapAnalysis(
   gap: GapAnalysis,
-  candidate: CandidateProfile | null | undefined
+  candidate: CandidateProfile | null | undefined,
+  rawSourceText?: string,
+  job?: JobPostingProfile | null
 ): GapAnalysis {
-  const corpus = buildCandidateCorpus(candidate);
+  const corpus = buildCandidateCorpus(candidate, rawSourceText);
   let matched = dedupePhrases(gap.matchedSignals ?? [], 10).filter(isMeaningfulSignal);
   const rawMissing = dedupePhrases(gap.missingSignals ?? [], 12).filter(isMeaningfulSignal);
   const rawWeak = dedupePhrases(gap.weakEvidence ?? [], 12).filter(isMeaningfulSignal);
@@ -242,8 +298,13 @@ export function finalizeGapAnalysis(
   for (const cluster of combined) {
     const canonical = pickCanonical(cluster);
     if (!canonical) continue;
-    const level = classifyEvidence(canonical, corpus);
+    let level = classifyEvidence(canonical, corpus);
     const label = normalizeForStorage(canonical, 400);
+    const ratio = evidenceHitRatio(canonical, corpus);
+
+    if (level === "missing" && job && signalMatchesJobPreferredOnly(job, label) && ratio >= 0.12) {
+      level = ratio >= 0.35 ? "partial" : "weak";
+    }
 
     if (level === "explicit_strong") {
       if (!matched.some((m) => areSemanticallyDuplicate(m, label))) {
@@ -306,6 +367,22 @@ function isPortfolioProjectCodeHeading(value: string): boolean {
   return /^프로젝트\s+[A-Za-z0-9가-힣]{1,4}\s*[.:·\-、]\s*\S/.test(t);
 }
 
+/** LLM이 기술 키워드만 matched에 넣은 경우 한 줄로 묶어 가독성 확보 */
+function buildStrengthPhrasesFromMatched(matchedSignals: string[]): string[] {
+  const bare: string[] = [];
+  const rich: string[] = [];
+  for (const raw of matchedSignals) {
+    const n = normalizeSignal(raw);
+    if (!n.includes(" ") && BARE_TECH_TOKENS.has(n)) bare.push(raw.trim());
+    else rich.push(toKoreanStrengthPhrase(raw));
+  }
+  if (bare.length >= 2) {
+    const pretty = bare.map((b) => b.replace(/^[a-z]/i, (c) => c.toUpperCase())).join(", ");
+    return [`공고·경력에 근거가 있는 기술 스택: ${pretty}`, ...rich];
+  }
+  return matchedSignals.map((s) => toKoreanStrengthPhrase(s));
+}
+
 /** 서류 한 줄이 공고에서 뽑은 요건·우대·업무 신호와 주제적으로 겹치는지 */
 function alignsWithJobSignals(phrase: string, jobSignals: string[]): boolean {
   const p = phrase.trim();
@@ -332,7 +409,8 @@ function alignsWithJobSignals(phrase: string, jobSignals: string[]): boolean {
 export function computeFitAnalysisSnapshot(
   gap: GapAnalysis,
   candidate: CandidateProfile | null | undefined,
-  job?: JobPostingProfile | null
+  job?: JobPostingProfile | null,
+  rawSourceText?: string
 ): FitAnalysisSnapshot {
   /** 프로젝트 코드형 제목(p.name)은 강점 후보에서 제외 — 설명·근거만 후보에 둔다 */
   const candidateSignals = [
@@ -390,7 +468,9 @@ export function computeFitAnalysisSnapshot(
           missingSignals: inferredMissing,
           weakEvidence: inferredWeak
         },
-        candidate
+        candidate,
+        rawSourceText,
+        job
       )
     );
   }
@@ -402,7 +482,7 @@ export function computeFitAnalysisSnapshot(
   const weakSignals = (gapFinal.weakEvidence ?? []).filter(isMeaningfulSignal);
 
   const concreteLines = collectConcreteCandidateLines(candidate, 10);
-  const fromMatched = matchedSignals.map((s) => toKoreanStrengthPhrase(s));
+  const fromMatched = buildStrengthPhrasesFromMatched(matchedSignals);
 
   const jobAlignedExtras: string[] = [];
   if (jobSignals.length > 0) {
