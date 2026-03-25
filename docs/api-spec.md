@@ -17,7 +17,8 @@ Base URL: `/v1`
   "resumeText": "string (min 20)",
   "portfolioText": "string (min 20)",
   "projectDescriptions": ["string"],
-  "targetJobPostingText": "string (min 20)"
+  "targetJobPostingText": "string (min 20)",
+  "testUserId": "string (optional, 숫자 3자리)"
 }
 ```
 
@@ -116,3 +117,7 @@ Base URL: `/v1`
 - `409`: 동일 stage 동시 실행 충돌 (`WorkflowExecutionLockService`)
 - `429`: 요청 과다 (`RequestRateLimiterService`)
 - `500`: 체인 실행/파싱 실패 (서비스는 가능한 fallback 반환)
+
+## 비고
+- 모든 생성/분석 API는 `force`를 지원하며, 기본값은 `false`다.
+- `GET /source-documents/by-test-user/:testUserId` 조회는 요청 헤더의 활성 테스트 ID와 대상 ID 일치 검증을 거친다.
