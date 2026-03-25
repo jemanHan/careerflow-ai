@@ -889,6 +889,16 @@ function LiveView({
   const [copiedKey, setCopiedKey] = useState<string>("");
   const [interviewNotesByQuestion, setInterviewNotesByQuestion] = useState<Record<string, string>>({});
   const saveNotesTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    const incoming = data?.interviewNotesJson ?? null;
+    if (incoming && typeof incoming === "object") {
+      setInterviewNotesByQuestion(incoming);
+    } else {
+      setInterviewNotesByQuestion({});
+    }
+  }, [data?.interviewNotesJson]);
+
   if (error) {
     return <p className="text-red-600">{error}</p>;
   }
@@ -925,15 +935,6 @@ function LiveView({
   const documentsStepComplete = hasGeneratedDocument(data);
   const followUpSubmitted = (data?.followUpAnswersJson?.length ?? 0) > 0;
   const interviewStepComplete = hasInterviewResult(data);
-
-  useEffect(() => {
-    const incoming = data?.interviewNotesJson ?? null;
-    if (incoming && typeof incoming === "object") {
-      setInterviewNotesByQuestion(incoming);
-    } else {
-      setInterviewNotesByQuestion({});
-    }
-  }, [data?.interviewNotesJson]);
 
   function handleNoteChange(question: string, note: string) {
     setInterviewNotesByQuestion((prev) => {
