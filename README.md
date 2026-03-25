@@ -81,6 +81,7 @@ npm run dev
   - **DB 연결**: `DATABASE_URL`
   - **LLM 키**: `GEMINI_API_KEY` 또는 `OPENAI_API_KEY` (+ `LLM_PROVIDER`)
   - **CORS/포트**: `CORS_ORIGIN`, `PORT`
+- 배포 시 코드에 `localhost`를 박아두지 않고, **`CORS_ORIGIN`에 프론트 도메인**, **`NEXT_PUBLIC_API_BASE_URL`에 백엔드 공개 URL**을 넣습니다. (`NODE_ENV=production`이고 `CORS_ORIGIN`이 비면 프론트 브라우저 요청은 CORS로 막힙니다.)
 
 ### 3) README 최소 구성(배포 전)
 - **프로젝트 한 줄 소개**

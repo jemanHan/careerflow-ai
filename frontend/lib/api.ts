@@ -1,3 +1,4 @@
+/** 개발 전용: `NEXT_PUBLIC_API_BASE_URL` 없을 때만 사용. production에서는 env 필수. */
 const FALLBACK_LOCAL_API_BASE = "http://localhost:4000/v1";
 
 function resolveApiBase() {
