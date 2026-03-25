@@ -797,10 +797,7 @@ export class LangchainWorkflowService {
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        coverLetter: `지원 동기와 직무 정합성을 강조한 초안\n${JSON.stringify(candidate)}`,
-        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`
-      };
+      throw new Error("DOCUMENT_GENERATION_FAILED");
     }
     try {
       const result = await runDocumentGenerationChain(llm, candidate, job, prioritizedProjectContext);
@@ -815,10 +812,7 @@ export class LangchainWorkflowService {
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        coverLetter: `지원 동기와 직무 정합성을 강조한 초안\n${JSON.stringify(candidate)}`,
-        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`
-      };
+      throw new Error("DOCUMENT_GENERATION_FAILED");
     }
   }
 
@@ -870,10 +864,7 @@ export class LangchainWorkflowService {
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        coverLetter: `${draft.coverLetter}\n\n[JD 맞춤 리라이트 적용]`,
-        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`
-      };
+      throw new Error("REWRITE_FOR_JOB_FAILED");
     }
     try {
       const result = await runRewriteTailoringChain(llm, draft, job, prioritizedProjectContext);
@@ -888,10 +879,7 @@ export class LangchainWorkflowService {
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        coverLetter: `${draft.coverLetter}\n\n[JD 맞춤 리라이트 적용]`,
-        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`
-      };
+      throw new Error("REWRITE_FOR_JOB_FAILED");
     }
   }
 }
