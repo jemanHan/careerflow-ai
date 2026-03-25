@@ -73,8 +73,11 @@ npm run dev
 ## 배포 전 꼭 체크할 것
 
 ### 1) Frontend env
-- `frontend/.env.local.example` 기준으로 **`NEXT_PUBLIC_API_BASE_URL`** 설정 확인
-- 이 값이 비어 있으면 프론트가 백엔드 API에 정상 연결되지 않습니다.
+- **로컬**: `frontend/.env.local.example` 기준으로 `NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1`
+- **Vercel(HTTPS → EC2 HTTP)**: 브라우저 Mixed Content 방지를 위해 `frontend/next.config.ts`의 rewrite 사용
+  - `BACKEND_URL=http://<EC2공인IP>:4000`
+  - `NEXT_PUBLIC_API_BASE_URL=/v1`
+- production 빌드 시 `NEXT_PUBLIC_API_BASE_URL`이 없으면(`resolveApiBase`) 에러가 납니다.
 
 ### 2) Backend env
 - `backend/.env.example` 기준으로 최소 확인
