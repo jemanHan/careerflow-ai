@@ -3,22 +3,27 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { getStoredTestUserId, getTestUserChangedEventName } from "../lib/test-user";
+import { getStoredTestUserId, getStoredTestUserIdHistory, getTestUserChangedEventName, storeTestUserId } from "../lib/test-user";
 
 /** 모든 페이지 상단: 뒤로가기 + 주요 이동 */
 export function GlobalAppNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [testUserId, setTestUserId] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
   const [openProfile, setOpenProfile] = useState(false);
   const profileWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setTestUserId(getStoredTestUserId().trim());
+    setHistory(getStoredTestUserIdHistory());
   }, [pathname]);
 
   useEffect(() => {
-    const handleSync = () => setTestUserId(getStoredTestUserId().trim());
+    const handleSync = () => {
+      setTestUserId(getStoredTestUserId().trim());
+      setHistory(getStoredTestUserIdHistory());
+    };
     const onCustom = () => handleSync();
     window.addEventListener(getTestUserChangedEventName(), onCustom as EventListener);
     window.addEventListener("storage", handleSync);
@@ -103,6 +108,34 @@ export function GlobalAppNav() {
                 <p className="text-xs text-slate-600">현재 테스트 ID</p>
                 <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{testUserId || "미설정"}</p>
               </div>
+
+              {history.length > 0 ? (
+                <div className="mt-3">
+                  <p className="px-1 text-xs font-semibold text-slate-500">최근 사용 ID</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {history.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          storeTestUserId(id);
+                          setTestUserId(id);
+                          setOpenProfile(false);
+                        }}
+                        className={[
+                          "rounded-full border px-3 py-1 text-xs font-semibold shadow-sm",
+                          id === testUserId
+                            ? "border-blue-600 bg-blue-50 text-blue-900"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        ].join(" ")}
+                        aria-label={`테스트 ID ${id}로 전환`}
+                      >
+                        {id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-3 flex flex-col gap-2">
                 <Link
