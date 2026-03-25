@@ -1,10 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { finalizeGapAnalysis } from "../../common/fit-analysis.util";
+import { localizeGapAnalysisForDisplay, normalizeForStorage } from "../../common/signal-display.util";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
-import { config as dotenvConfig } from "dotenv";
-import { join } from "path";
 import { runCandidateProfileChain } from "./chains/candidate-profile.chain";
 import { runDocumentGenerationChain } from "./chains/document-generation.chain";
 import { runFollowUpQuestionsChain } from "./chains/follow-up-questions.chain";
@@ -21,7 +21,15 @@ import {
   RewriteDraft
 } from "./workflow.types";
 
-type RouteKind = "light" | "quality";
+export type FitAnalysisRoutingContext = {
+  /**
+   * true: 이 애플리케이션의 최초 공고 대비 분석(첫 ANALYZED 전)에만 Gemini에서 GEMINI_PREMIUM_MODEL 사용.
+   * 재분석·보완 후 갭 재계산 등에서는 false/미전달.
+   */
+  usePremiumFitPass?: boolean;
+};
+
+type RouteKind = "light" | "quality" | "premium";
 type WorkflowStep =
   | "extractCandidateProfile"
   | "extractJobPosting"
@@ -43,6 +51,334 @@ type ExecutionDiagnostics = RoutingInfo & {
   hasProviderApiKey: boolean;
 };
 
+const SIMPLE_STOPWORDS = new Set([
+  "채용",
+  "채용합니다",
+  "지원",
+  "모집",
+  "주요",
+  "업무",
+  "자격",
+  "요건",
+  "우대",
+  "사항",
+  "그리고",
+  "또한"
+]);
+
+const GENERIC_SIGNAL_TOKENS = new Set([
+  "ai",
+  "데이터",
+  "실제",
+  "product",
+  "engineer"
+]);
+
+const STRONG_SINGLE_TOKENS = new Set([
+  "typescript",
+  "javascript",
+  "nestjs",
+  "react",
+  "nextjs",
+  "postgresql",
+  "prisma",
+  "aws",
+  "docker",
+  "kubernetes",
+  "langchain",
+  "python",
+  "sql",
+  "figma",
+  "ga4",
+  "seo",
+  "rbac",
+  "oauth2"
+]);
+
+function cleanLineSignal(value: string): string {
+  return value.replace(/^[\-\*\u2022\d\.\)\s]+/, "").replace(/\s+/g, " ").trim();
+}
+
+function toActionableSignal(value: string): string {
+  const v = cleanLineSignal(value);
+  if (/문제를?\s*구조화/i.test(v)) return "문제 구조화 역량";
+  if (/기획.*개발|end-?to-?end/i.test(v)) return "엔드투엔드 실행 경험";
+  if (/우선순위/i.test(v)) return "우선순위 결정 역량";
+  if (/협업|커뮤니케이션/i.test(v)) return "협업 조율 경험";
+  if (v.length <= 240) return v;
+  return normalizeForStorage(v, 240);
+}
+
+function isUiSafeSignalPhrase(value: string): boolean {
+  const normalized = toActionableSignal(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return false;
+  if (normalized.length < 3) return false;
+  if (normalized.length > 200) return false;
+  if (SIMPLE_STOPWORDS.has(normalized)) return false;
+  if (GENERIC_SIGNAL_TOKENS.has(normalized)) return false;
+  if (/^\d+$/.test(normalized)) return false;
+  // 단일 토큰은 강한 기술 신호일 때만 허용
+  if (!normalized.includes(" ") && !STRONG_SINGLE_TOKENS.has(normalized)) return false;
+  // 조사/연결어로 끝나는 약한 신호 제거
+  if (/(으로|로|와|과|및|또는|등|해|한)$/.test(normalized)) return false;
+  return true;
+}
+
+function sanitizeSignalsForUi(values: string[], limit: number): string[] {
+  return values
+    .map((v) => toActionableSignal(v))
+    .filter((v) => v.length > 0)
+    .filter((v) => isUiSafeSignalPhrase(v))
+    .filter((v, idx, arr) => arr.indexOf(v) === idx)
+    .slice(0, limit);
+}
+
+function splitLineLevelPhrases(line: string): string[] {
+  const cleaned = cleanLineSignal(line);
+  if (!cleaned) return [];
+  if (cleaned.length <= 120) return [cleaned];
+  return cleaned
+    .split(/[,;]|\.|。| 및 | 또는 | 그리고 |·/g)
+    .map((part) => cleanLineSignal(part))
+    .filter((part) => part.length >= 4 && part.length <= 200);
+}
+
+function extractFallbackCandidateSignals(inputText: string, limit = 6): string[] {
+  const normalized = inputText
+    .toLowerCase()
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ");
+  const dictionary = [
+    "typescript",
+    "javascript",
+    "nestjs",
+    "react",
+    "next.js",
+    "nextjs",
+    "postgresql",
+    "prisma",
+    "aws",
+    "docker",
+    "kubernetes",
+    "langchain",
+    "oauth2",
+    "rbac",
+    "figma",
+    "ga4",
+    "seo",
+    "python",
+    "sql"
+  ];
+  const fromDictionary = dictionary.filter((word) => normalized.includes(word));
+  const projectLikeLines = inputText
+    .split(/\r?\n/)
+    .map((line) => cleanLineSignal(line))
+    .filter((line) => line.length >= 5 && line.length <= 50)
+    .filter((line) => /프로젝트|project|대시보드|플랫폼|워크플로우|캠페인|리디자인|자동화/i.test(line))
+    .slice(0, 4);
+  return sanitizeSignalsForUi([...fromDictionary, ...projectLikeLines], limit);
+}
+
+function extractFallbackJobSignals(jobText: string): Pick<JobPostingProfile, "requiredSkills" | "preferredSkills" | "responsibilities" | "evaluationSignals"> {
+  const lines = jobText.split(/\r?\n/).map((line) => line.trim());
+  let section: "required" | "preferred" | "responsibility" | "none" = "none";
+  const required: string[] = [];
+  const preferred: string[] = [];
+  const responsibilities: string[] = [];
+
+  for (const line of lines) {
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (line.includes("자격 요건") || lower.includes("requirements")) {
+      section = "required";
+      continue;
+    }
+    if (line.includes("우대 사항") || lower.includes("preferred qualifications")) {
+      section = "preferred";
+      continue;
+    }
+    if (line.includes("주요 업무") || lower.includes("responsibilities")) {
+      section = "responsibility";
+      continue;
+    }
+
+    const isBulletLike = /^[-*\u2022]/.test(line);
+    // 섹션 내부 문장형 라인도 허용하되, 길이 제한으로 과한 문단은 제외
+    if (!isBulletLike && section === "none") continue;
+    const phrases = splitLineLevelPhrases(line).filter((p) => isUiSafeSignalPhrase(p));
+    if (phrases.length === 0) continue;
+    if (section === "required") required.push(...phrases);
+    else if (section === "preferred") preferred.push(...phrases);
+    else responsibilities.push(...phrases);
+  }
+
+  const uniq = (arr: string[]) => arr.filter((v, i, a) => a.indexOf(v) === i);
+  let requiredSkills = sanitizeSignalsForUi(uniq(required), 6);
+  let preferredSkills = sanitizeSignalsForUi(uniq(preferred), 6);
+  let responsibilitySignals = sanitizeSignalsForUi(uniq(responsibilities), 6);
+  let evaluationSignals = sanitizeSignalsForUi([...requiredSkills.slice(0, 3), ...responsibilitySignals.slice(0, 3)], 6);
+
+  if (requiredSkills.length === 0 && preferredSkills.length === 0 && responsibilitySignals.length === 0) {
+    const fallbackLines = jobText
+      .split(/\r?\n/)
+      .map((line) => cleanLineSignal(line))
+      .filter((line) => line.length >= 6 && line.length <= 120)
+      .flatMap((line) => splitLineLevelPhrases(line))
+      .filter((line) => isUiSafeSignalPhrase(line));
+    requiredSkills = sanitizeSignalsForUi(fallbackLines.slice(0, 6), 6);
+    responsibilitySignals = sanitizeSignalsForUi(fallbackLines.slice(2, 8), 6);
+    evaluationSignals = sanitizeSignalsForUi([...requiredSkills.slice(0, 3), ...responsibilitySignals.slice(0, 3)], 6);
+  }
+
+  return {
+    requiredSkills,
+    preferredSkills,
+    responsibilities: responsibilitySignals,
+    evaluationSignals
+  };
+}
+
+function pickTopSignals(job: JobPostingProfile, gap?: GapAnalysis, limit = 3): string[] {
+  const merged = [
+    ...(job.requiredSkills ?? []),
+    ...(job.responsibilities ?? []),
+    ...(job.evaluationSignals ?? []),
+    ...(gap?.missingSignals ?? []),
+    ...(gap?.weakEvidence ?? [])
+  ]
+    .map((v) => v?.trim())
+    .filter((v): v is string => Boolean(v && v.length >= 2))
+    .filter((v, idx, arr) => arr.indexOf(v) === idx);
+  return merged.slice(0, limit);
+}
+
+/** 부족·약한 신호 개수에 맞춰 보완 질문 수(갭이 없을 때만 기본 3개). 상한 15. */
+function computeFollowUpQuestionTargetCount(gap: GapAnalysis): number {
+  const m = (gap.missingSignals ?? []).filter((s) => String(s ?? "").trim().length > 0).length;
+  const w = (gap.weakEvidence ?? []).filter((s) => String(s ?? "").trim().length > 0).length;
+  const n = m + w;
+  if (n === 0) return 3;
+  return Math.min(15, n);
+}
+
+function buildFallbackFollowUpQuestions(gap: GapAnalysis, targetCount: number): string[] {
+  const missing = sanitizeSignalsForUi(gap.missingSignals ?? [], 12);
+  const weak = sanitizeSignalsForUi(gap.weakEvidence ?? [], 12);
+  const out: string[] = [];
+
+  for (const signal of missing) {
+    if (out.length >= targetCount) break;
+    out.push(
+      `공고의「${signal}」요구에 대해 직접 경험이 있나요? 있으면 본인 역할·방법·결과를 한 줄로, 없으면 인접 경험이 있다면 범위만 구분해 짧게 적어 주세요.`
+    );
+  }
+  for (const signal of weak) {
+    if (out.length >= targetCount) break;
+    out.push(
+      `「${signal}」는 언급은 있으나 근거가 약합니다. 역할·산출물·검증 방법·수치 중 보강할 수 있는 것을 한 줄로 적어 주세요.`
+    );
+  }
+
+  const fillers = [
+    "이 직무 공고의 핵심 요구 중 본인 경험과 가장 잘 맞는 한 가지를 고르고, 있으면 사례를 한 줄로, 없으면 인접 경험의 범위를 구분해 적어 주세요.",
+    "공고에서 반복되는 요구 키워드 중 본인이 실제로 수행해 본 것이 있나요? 있으면 역할·기간을, 없으면 관련 교육·부분 참여만 짧게 적어 주세요.",
+    "지원 직무와 직접 연결되는 성과나 산출물이 있다면 한 줄로 적고, 없다면 보완 계획을 한 줄로만 적어 주세요."
+  ];
+  let fillerIdx = 0;
+  while (out.length < targetCount) {
+    out.push(fillers[fillerIdx % fillers.length]!);
+    fillerIdx += 1;
+  }
+  return dedupeFollowUpQuestions(out).slice(0, targetCount);
+}
+
+function mergeFollowUpToTarget(llmQuestions: string[], gap: GapAnalysis, target: number): string[] {
+  const fb = buildFallbackFollowUpQuestions(gap, target);
+  return dedupeFollowUpQuestions([...llmQuestions, ...fb]).slice(0, target);
+}
+
+function normalizeFollowUpKey(q: string): string {
+  return q
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[「」"'“”]/g, "")
+    .slice(0, 80);
+}
+
+function dedupeFollowUpQuestions(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const q of items) {
+    const k = normalizeFollowUpKey(q);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(q);
+  }
+  return out;
+}
+
+function buildFallbackInterviewReport(
+  candidate: CandidateProfile,
+  job: JobPostingProfile,
+  gap?: GapAnalysis
+): InterviewReportItem[] {
+  const signals = pickTopSignals(job, gap, 3);
+  const s1 = signals[0] ?? "핵심 요구사항";
+  const s2 = signals[1] ?? "협업/실행 경험";
+  const s3 = signals[2] ?? "성과 근거";
+
+  return [
+    {
+      section: "core",
+      question: `이 직무에서 "${s1}"을 수행한 실제 사례를 설명해 주세요.`,
+      whyAsked: "JD 핵심 요구와 제출 서류의 실제 수행 근거를 연결하기 위한 질문입니다.",
+      answerPoints: ["상황", "본인 역할", "실행 결과"],
+      modelAnswer:
+        "유사한 요구가 있었던 프로젝트에서 문제를 정의하고 실행 범위를 정리했습니다.\n제가 담당한 역할과 결정 기준을 명확히 구분해 설명할 수 있습니다.\n실행 후에는 결과를 지표 또는 사용자 반응으로 확인했습니다.",
+      caution: "팀 성과를 개인 성과로 과장하지 말고 본인 기여를 분리해 설명하세요."
+    },
+    {
+      section: "core",
+      question: `"${s2}" 관련 협업/의사결정에서 본인이 맡은 책임은 무엇이었나요?`,
+      whyAsked: "협업 구조와 책임 범위를 확인해 실행 신뢰도를 검증하기 위한 질문입니다.",
+      answerPoints: ["협업 대상", "의사결정 기준", "충돌 조정 방식"],
+      modelAnswer:
+        "협업 파트너와 목표를 먼저 정렬하고, 우선순위를 합의한 뒤 실행했습니다.\n이슈가 생기면 대안 비교와 영향도를 기준으로 의사결정을 내렸습니다.\n결과와 회고를 문서화해 다음 작업에 반영했습니다.",
+      caution: "결과만 말하지 말고 판단 근거와 책임 범위를 함께 설명하세요."
+    },
+    {
+      section: "core",
+      question: `"${s3}"를 뒷받침할 수 있는 성과 근거를 어떻게 제시하시겠습니까?`,
+      whyAsked: "주장 대비 증빙 수준을 확인해 면접 신뢰도를 높이기 위한 질문입니다.",
+      answerPoints: ["정량/정성 근거", "비교 기준", "한계와 보완점"],
+      modelAnswer:
+        "가능한 범위에서 수치 또는 전후 비교 근거를 제시합니다.\n정량 지표가 없으면 사용자 반응, 운영 개선 등 정성 근거를 명확히 제시합니다.\n부족한 부분은 현재 수준과 보완 계획을 구분해 설명합니다.",
+      caution: "근거가 불충분하면 단정하지 말고 확인 가능한 사실 중심으로 답변하세요."
+    },
+    {
+      section: "deep",
+      question: `이 직무의 "${s1}" 요구를 기준으로, 실패/한계 상황에서 어떻게 대응했는지 말해 주세요.`,
+      whyAsked: "리스크 대응과 재발 방지 관점을 확인하기 위한 심화 질문입니다.",
+      answerPoints: ["문제 원인", "대응 조치", "재발 방지"],
+      modelAnswer:
+        "실패 상황을 숨기지 않고 원인을 구조적으로 분해해 설명합니다.\n즉시 조치와 근본 개선을 분리해 실행하고, 재발 방지 기준을 문서화했습니다.\n이후 동일 유형 이슈 발생 빈도를 줄이는 데 집중했습니다."
+    },
+    {
+      section: "deep",
+      question: `현재 경력에서 "${s2}"와 관련해 보강이 필요한 부분은 무엇이고, 어떻게 보완할 계획인가요?`,
+      whyAsked: "과장 없이 자기 인식과 성장 계획을 설명할 수 있는지 확인하기 위한 질문입니다.",
+      answerPoints: ["현재 수준", "보완 계획", "실행 일정"],
+      modelAnswer:
+        "현재 수준을 과장하지 않고, 부족한 근거를 먼저 인정합니다.\n보완할 활동과 산출물을 구체적으로 정리해 실행 계획을 제시합니다.\n면접에서는 완료된 경험과 진행 중 계획을 명확히 구분해 설명합니다.",
+      caution: "지원 직무와 무관한 일반론만 말하면 설득력이 떨어질 수 있습니다."
+    }
+  ];
+}
+
 @Injectable()
 export class LangchainWorkflowService {
   private readonly logger = new Logger(LangchainWorkflowService.name);
@@ -51,6 +387,8 @@ export class LangchainWorkflowService {
   private readonly openaiApiKey?: string;
   private readonly defaultModel: string;
   private readonly highQualityModel: string;
+  /** 최초 공고 대비 분석 4단계 전용(미설정 시 premium 경로 비활성 → quality와 동일) */
+  private readonly geminiPremiumModel: string;
   private readonly temperature: number;
   private readonly llmByModel = new Map<string, BaseChatModel>();
   private readonly lastExecutionByStep = new Map<WorkflowStep, ExecutionDiagnostics>();
@@ -66,83 +404,114 @@ export class LangchainWorkflowService {
   }
 
   constructor(private readonly configService: ConfigService) {
-    const parsedFromCwd = dotenvConfig({ path: join(process.cwd(), ".env") }).parsed ?? {};
-    const parsedFromBackendRoot = dotenvConfig({ path: join(process.cwd(), "backend/.env") }).parsed ?? {};
-    const parsedDotenv = { ...parsedFromBackendRoot, ...parsedFromCwd };
     const rawProvider = this.readNonEmpty(
       this.configService.get<string>("LLM_PROVIDER"),
-      parsedDotenv.LLM_PROVIDER
+      process.env.LLM_PROVIDER
     )?.toLowerCase();
     this.geminiApiKey = this.readNonEmpty(
       this.configService.get<string>("GEMINI_API_KEY"),
-      parsedDotenv.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY,
       this.configService.get<string>("GOOGLE_API_KEY"),
-      parsedDotenv.GOOGLE_API_KEY
+      process.env.GOOGLE_API_KEY
     );
     this.openaiApiKey = this.readNonEmpty(
       this.configService.get<string>("OPENAI_API_KEY"),
-      parsedDotenv.OPENAI_API_KEY
+      process.env.OPENAI_API_KEY
     );
     this.provider = rawProvider === "openai" ? "openai" : "gemini";
     if (this.provider === "gemini") {
       // 역할 기반 라우팅: 경량(기본) vs 고품질은 별도 모델·별도 쿼터. 한 모델로 합치지 않음.
       this.defaultModel =
         this.configService.get<string>("GEMINI_DEFAULT_MODEL") ??
-        parsedDotenv.GEMINI_DEFAULT_MODEL ??
-        "gemini-3.1-flash-lite";
+        process.env.GEMINI_DEFAULT_MODEL ??
+        "gemini-2.5-flash-lite";
       this.highQualityModel =
         this.configService.get<string>("GEMINI_HIGH_QUALITY_MODEL") ??
-        parsedDotenv.GEMINI_HIGH_QUALITY_MODEL ??
+        process.env.GEMINI_HIGH_QUALITY_MODEL ??
         "gemini-2.5-flash";
+      this.geminiPremiumModel =
+        this.configService.get<string>("GEMINI_PREMIUM_MODEL")?.trim() ??
+        process.env.GEMINI_PREMIUM_MODEL?.trim() ??
+        "";
     } else {
       this.defaultModel =
-        this.configService.get<string>("OPENAI_MODEL") ?? parsedDotenv.OPENAI_MODEL ?? "gpt-4.1-mini";
+        this.configService.get<string>("OPENAI_MODEL") ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
       this.highQualityModel =
         this.configService.get<string>("OPENAI_HIGH_QUALITY_MODEL") ??
-        parsedDotenv.OPENAI_HIGH_QUALITY_MODEL ??
+        process.env.OPENAI_HIGH_QUALITY_MODEL ??
         this.defaultModel;
+      this.geminiPremiumModel = "";
     }
     this.temperature = Number(
       this.configService.get<string>("LLM_TEMPERATURE") ??
-        parsedDotenv.LLM_TEMPERATURE ??
+        process.env.LLM_TEMPERATURE ??
         this.configService.get<string>("OPENAI_TEMPERATURE") ??
-        parsedDotenv.OPENAI_TEMPERATURE ??
+        process.env.OPENAI_TEMPERATURE ??
         "0.2"
     );
     this.logger.log(
-      `LLM config loaded: provider=${this.provider}, geminiKeyPresent=${Boolean(this.geminiApiKey)}, openaiKeyPresent=${Boolean(this.openaiApiKey)}, defaultModel=${this.defaultModel}, highQualityModel=${this.highQualityModel}`
+      `LLM config loaded: provider=${this.provider}, geminiKeyPresent=${Boolean(this.geminiApiKey)}, openaiKeyPresent=${Boolean(this.openaiApiKey)}, defaultModel=${this.defaultModel}, highQualityModel=${this.highQualityModel}, premiumModelConfigured=${this.provider === "gemini" ? Boolean(this.geminiPremiumModel) : false}`
     );
   }
 
-  private routeOf(step: WorkflowStep): RouteKind {
-    // light(기본): 추출·JD·갭·후속·면접 질문. quality(고품질): 문서 생성·JD 맞춤 리라이트만.
-    return step === "generateDocuments" || step === "rewriteForTargetJob" ? "quality" : "light";
+  /**
+   * Gemini: 최초 공고 대비 분석 4단계만 optional premium, 문서·면접은 항상 high, 리라이트는 light(보조).
+   * OpenAI: 문서·면접만 high, 나머지 light (premium 미사용).
+   */
+  resolveRouting(step: WorkflowStep, ctx?: FitAnalysisRoutingContext): RoutingInfo {
+    if (this.provider === "openai") {
+      if (step === "generateDocuments" || step === "generateInterviewQuestions") {
+        return { provider: "openai", route: "quality", model: this.highQualityModel };
+      }
+      return { provider: "openai", route: "light", model: this.defaultModel };
+    }
+
+    const fitPipelineSteps: WorkflowStep[] = [
+      "extractCandidateProfile",
+      "extractJobPosting",
+      "detectGaps",
+      "generateFollowUpQuestions"
+    ];
+    const usePremium =
+      Boolean(ctx?.usePremiumFitPass) &&
+      this.geminiPremiumModel.length > 0 &&
+      fitPipelineSteps.includes(step);
+
+    if (usePremium) {
+      return { provider: "gemini", route: "premium", model: this.geminiPremiumModel };
+    }
+
+    if (step === "rewriteForTargetJob") {
+      return { provider: "gemini", route: "light", model: this.defaultModel };
+    }
+
+    return { provider: "gemini", route: "quality", model: this.highQualityModel };
   }
 
-  getRoutingInfo(step: WorkflowStep): RoutingInfo {
-    const route = this.routeOf(step);
+  getRoutingInfo(step: WorkflowStep, ctx?: FitAnalysisRoutingContext): RoutingInfo {
+    return this.resolveRouting(step, ctx);
+  }
+
+  getExecutionDiagnostics(step: WorkflowStep, ctx?: FitAnalysisRoutingContext): ExecutionDiagnostics {
+    const cached = this.lastExecutionByStep.get(step);
+    if (cached) {
+      return cached;
+    }
+    const route = this.resolveRouting(step, ctx);
     return {
-      provider: this.provider,
-      route,
-      model: route === "quality" ? this.highQualityModel : this.defaultModel
+      ...route,
+      fallbackUsed: false,
+      hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
     };
   }
 
-  getExecutionDiagnostics(step: WorkflowStep): ExecutionDiagnostics {
-    const route = this.getRoutingInfo(step);
-    return (
-      this.lastExecutionByStep.get(step) ?? {
-        ...route,
-        fallbackUsed: false,
-        hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
-      }
-    );
-  }
-
-  private markExecution(step: WorkflowStep, data: Omit<ExecutionDiagnostics, "provider" | "route" | "model">): void {
-    const route = this.getRoutingInfo(step);
+  private markExecution(
+    step: WorkflowStep,
+    routing: RoutingInfo,
+    data: Omit<ExecutionDiagnostics, "provider" | "route" | "model">
+  ): void {
     const payload: ExecutionDiagnostics = {
-      ...route,
+      ...routing,
       ...data
     };
     this.lastExecutionByStep.set(step, payload);
@@ -155,14 +524,13 @@ export class LangchainWorkflowService {
     }
   }
 
-  private getModelRouter(stage: RouteKind): BaseChatModel | undefined {
-    const key = `${this.provider}:${stage === "quality" ? this.highQualityModel : this.defaultModel}`;
+  private getLlmForModel(modelName: string): BaseChatModel | undefined {
+    const key = `${this.provider}:${modelName}`;
     const existing = this.llmByModel.get(key);
     if (existing) {
       return existing;
     }
 
-    const modelName = stage === "quality" ? this.highQualityModel : this.defaultModel;
     if (this.provider === "gemini") {
       if (!this.geminiApiKey) {
         return undefined;
@@ -171,7 +539,6 @@ export class LangchainWorkflowService {
         apiKey: this.geminiApiKey,
         model: modelName,
         temperature: this.temperature,
-        // 429(쿼터) 등에는 재시도해도 같은 날 소용없어 응답이 길어지기만 함 → 즉시 실패 후 fallback
         maxRetries: 0
       });
       this.llmByModel.set(key, created);
@@ -193,157 +560,196 @@ export class LangchainWorkflowService {
 
   async extractCandidateProfile(
     inputText: string,
-    prioritizedProjectContext?: string
+    prioritizedProjectContext?: string,
+    ctx?: FitAnalysisRoutingContext
   ): Promise<CandidateProfile> {
     const step: WorkflowStep = "extractCandidateProfile";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step, ctx);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      const fallbackStrengths = extractFallbackCandidateSignals(inputText, 6);
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return {
         summary: "LLM API 키 미설정 상태의 기본 프로필",
-        strengths: ["TypeScript", "문제 해결", "제품 중심 사고"],
+        strengths: fallbackStrengths,
         experiences: [],
         projects: []
       };
     }
     try {
       const result = await runCandidateProfileChain(llm, inputText, prioritizedProjectContext);
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return result;
     } catch (error) {
-      this.markExecution(step, {
+      const fallbackStrengths = extractFallbackCandidateSignals(inputText, 6);
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return {
         summary: "LLM 호출 실패 시 기본 프로필",
-        strengths: ["TypeScript", "문제 해결", "제품 중심 사고"],
+        strengths: fallbackStrengths,
         experiences: [],
         projects: []
       };
     }
   }
 
-  async extractJobPosting(jobText: string): Promise<JobPostingProfile> {
+  async extractJobPosting(jobText: string, ctx?: FitAnalysisRoutingContext): Promise<JobPostingProfile> {
     const step: WorkflowStep = "extractJobPosting";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step, ctx);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      const parsed = extractFallbackJobSignals(jobText);
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return {
-        role: "AI/Data Product Engineer",
-        requiredSkills: ["TypeScript", "NestJS", "React", "PostgreSQL", "AWS"],
-        preferredSkills: ["LangChain", "LLM Product Engineering"],
-        responsibilities: ["제품 구현", "배포", "기술 의사결정"],
-        evaluationSignals: ["end-to-end ownership", "practical AI problem solving"]
+        role: "미분류 직무",
+        summary: "JD 파싱 fallback 결과",
+        requiredSkills: parsed.requiredSkills,
+        preferredSkills: parsed.preferredSkills,
+        responsibilities: parsed.responsibilities,
+        evaluationSignals: parsed.evaluationSignals,
+        domainSignals: [],
+        collaborationSignals: [],
+        toolSignals: [],
+        senioritySignals: [],
+        outputExpectations: []
       };
     }
     try {
       const result = await runJobPostingChain(llm, jobText);
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return result;
     } catch (error) {
-      this.markExecution(step, {
+      const parsed = extractFallbackJobSignals(jobText);
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return {
-        role: "AI/Data Product Engineer",
-        requiredSkills: ["TypeScript", "NestJS", "React", "PostgreSQL", "AWS"],
-        preferredSkills: ["LangChain", "LLM Product Engineering"],
-        responsibilities: ["제품 구현", "배포", "기술 의사결정"],
-        evaluationSignals: ["end-to-end ownership", "practical AI problem solving"]
+        role: "미분류 직무",
+        summary: "JD 파싱 fallback 결과",
+        requiredSkills: parsed.requiredSkills,
+        preferredSkills: parsed.preferredSkills,
+        responsibilities: parsed.responsibilities,
+        evaluationSignals: parsed.evaluationSignals,
+        domainSignals: [],
+        collaborationSignals: [],
+        toolSignals: [],
+        senioritySignals: [],
+        outputExpectations: []
       };
     }
   }
 
   async detectGaps(
     candidate: CandidateProfile,
-    job: JobPostingProfile
+    job: JobPostingProfile,
+    ctx?: FitAnalysisRoutingContext
   ): Promise<GapAnalysis> {
     const step: WorkflowStep = "detectGaps";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step, ctx);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        matchedSignals: ["TypeScript 기반 구현 경험"],
-        missingSignals: ["AWS 운영 증거", "배포 자동화 증거"],
-        weakEvidence: ["정량 성과 지표 부족"]
-      };
+      return localizeGapAnalysisForDisplay(
+        finalizeGapAnalysis(
+          {
+            matchedSignals: [],
+            missingSignals: sanitizeSignalsForUi(job.requiredSkills ?? [], 10),
+            weakEvidence: sanitizeSignalsForUi(
+              [...(job.evaluationSignals ?? []), ...(job.preferredSkills ?? [])],
+              10
+            )
+          },
+          candidate
+        )
+      );
     }
     try {
       const result = await runGapDetectionChain(llm, candidate, job);
-      this.markExecution(step, {
+      const safeResult: GapAnalysis = finalizeGapAnalysis(
+        {
+          matchedSignals: sanitizeSignalsForUi(result.matchedSignals ?? [], 10),
+          missingSignals: sanitizeSignalsForUi(result.missingSignals ?? [], 10),
+          weakEvidence: sanitizeSignalsForUi(result.weakEvidence ?? [], 10)
+        },
+        candidate
+      );
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return result;
+      return localizeGapAnalysisForDisplay(safeResult);
     } catch (error) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return {
-        matchedSignals: ["TypeScript 기반 구현 경험"],
-        missingSignals: ["AWS 운영 증거", "배포 자동화 증거"],
-        weakEvidence: ["정량 성과 지표 부족"]
-      };
+      return localizeGapAnalysisForDisplay(
+        finalizeGapAnalysis(
+          {
+            matchedSignals: [],
+            missingSignals: sanitizeSignalsForUi(job.requiredSkills ?? [], 10),
+            weakEvidence: sanitizeSignalsForUi(
+              [...(job.evaluationSignals ?? []), ...(job.preferredSkills ?? [])],
+              10
+            )
+          },
+          candidate
+        )
+      );
     }
   }
 
-  async generateFollowUpQuestions(gap: GapAnalysis): Promise<string[]> {
+  async generateFollowUpQuestions(gap: GapAnalysis, ctx?: FitAnalysisRoutingContext): Promise<string[]> {
     const step: WorkflowStep = "generateFollowUpQuestions";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step, ctx);
+    const target = computeFollowUpQuestionTargetCount(gap);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return [
-        "지원하려는 직무에서 자신 있게 쓸 수 있는 기술 키워드 2~3개를 적어 주세요.",
-        "최근에 몰입했던 프로젝트에서 본인이 맡은 역할을 한 문장으로 적어 주세요.",
-        "성과나 배운 점을 한 줄로 적어 주세요. (없으면 '없음')"
-      ];
+      return buildFallbackFollowUpQuestions(gap, target);
     }
     try {
-      const result = await runFollowUpQuestionsChain(llm, gap);
-      this.markExecution(step, {
+      const result = await runFollowUpQuestionsChain(llm, gap, target);
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return result;
+      return mergeFollowUpToTarget(result, gap, target);
     } catch (error) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return [
-        "지원하려는 직무에서 자신 있게 쓸 수 있는 기술 키워드 2~3개를 적어 주세요.",
-        "최근에 몰입했던 프로젝트에서 본인이 맡은 역할을 한 문장으로 적어 주세요.",
-        "성과나 배운 점을 한 줄로 적어 주세요. (없으면 '없음')"
-      ];
+      return buildFallbackFollowUpQuestions(gap, target);
     }
   }
 
@@ -367,9 +773,10 @@ export class LangchainWorkflowService {
     prioritizedProjectContext?: string
   ): Promise<GeneratedDraft> {
     const step: WorkflowStep = "generateDocuments";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
@@ -382,13 +789,13 @@ export class LangchainWorkflowService {
     }
     try {
       const result = await runDocumentGenerationChain(llm, candidate, job, prioritizedProjectContext);
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return result;
     } catch (error) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
@@ -408,119 +815,30 @@ export class LangchainWorkflowService {
     gapAnalysis?: GapAnalysis
   ): Promise<InterviewReportItem[]> {
     const step: WorkflowStep = "generateInterviewQuestions";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return [
-        {
-          section: "core",
-          question: "강조 프로젝트에서 본인의 역할과 기여 범위를 어떻게 나눠 설명하시겠습니까?",
-          whyAsked: "JD의 책임 범위 검증과 프로젝트 실제 기여도 확인을 위해 생성되었습니다.",
-          answerPoints: ["요구사항-담당 범위-결과를 1세트로 설명", "팀 협업 경계와 본인 결정 지점을 분리"],
-          modelAnswer:
-            "저는 요구사항 정의, 워크플로우 설계, 구현 우선순위 결정까지 맡았습니다.\n이후 백엔드 체인 구조와 프론트 결과 화면을 직접 연결해 사용자 흐름을 완성했습니다.\n결과적으로 분석-보완-문서-면접 단계가 한 화면에서 재실행 가능해졌고, 반복 개선이 쉬워졌습니다.\n팀 작업에서는 설계 기준과 역할 경계를 먼저 정리해 충돌을 줄였습니다.",
-          caution: "개인 기여를 팀 전체 성과처럼 과장하지 마세요."
-        },
-        {
-          section: "core",
-          question: "핵심 기술 선택(스택/아키텍처)의 판단 기준과 트레이드오프는 무엇이었나요?",
-          whyAsked: "JD의 기술 의사결정 역량 항목과 포트폴리오 기술 선택 근거를 연결하기 위한 질문입니다.",
-          answerPoints: ["대안 2개 이상과 선택 이유", "성능/개발속도/운영비용 중 무엇을 우선했는지"],
-          modelAnswer:
-            "빠른 MVP 검증이 목표라서 Next.js + NestJS + Prisma 조합을 선택했습니다.\n프론트/백 타입 일관성과 유지보수를 위해 TypeScript를 기본으로 가져갔습니다.\n초기에는 기능 완성 속도를 우선했고, 이후 단계에서 로그 추적과 재실행 안정성을 보강했습니다.\n즉, 단기 속도와 장기 운영성을 단계적으로 맞추는 전략을 택했습니다.",
-          caution: "RAG/Agent/대규모 운영을 실제 수행하지 않았다면 단정적으로 말하지 마세요."
-        },
-        {
-          section: "core",
-          question: "요구사항 변경 시 우선순위를 어떻게 재조정했고 결과를 어떻게 검증했나요?",
-          whyAsked: "JD의 실행력/문제해결 역량을 실전 사례로 확인하기 위한 질문입니다.",
-          answerPoints: ["변경 전후 계획 차이", "검증 지표 또는 테스트 방식", "결과와 다음 개선점"],
-          modelAnswer:
-            "초기에는 기능 구현이 우선이었지만, 운영 중에는 사용자 체감 문제가 큰 항목부터 재정렬했습니다.\n예를 들어 문서 가독성/면접 리포트 구조/단계 독립성 이슈를 우선순위 상단으로 올렸습니다.\n변경 후에는 실제 화면 결과와 단계별 로그를 기준으로 동작을 확인했습니다.\n이 방식으로 기능 추가보다 사용성 개선 효과가 큰 작업을 먼저 처리했습니다.",
-          caution: "정량 수치가 없으면 추정치로 포장하지 말고 관찰 근거 중심으로 답변하세요."
-        },
-        {
-          section: "deep",
-          question: "예상과 달랐던 실패 사례와 이후 개선 조치를 설명해 주세요.",
-          whyAsked: "약한 근거 영역의 리스크 대응 역량을 확인하기 위해 생성되었습니다.",
-          answerPoints: ["문제 상황", "원인 분석", "재발 방지 조치"],
-          modelAnswer:
-            "문서 생성 단계에서 모델 응답이 문자열이 아닌 객체/배열로 내려와 fallback이 반복된 적이 있었습니다.\n원인은 파서 스키마가 문자열만 허용하던 부분이었습니다.\n응답 정규화 로직을 추가해 객체/배열/JSON 문자열도 읽을 수 있는 텍스트로 변환하도록 수정했습니다.\n이후 같은 유형의 실패가 줄고, 사용자 화면 품질도 함께 개선됐습니다.",
-          caution: "원인 없는 성공담 위주 답변은 신뢰도를 떨어뜨릴 수 있습니다."
-        },
-        {
-          section: "deep",
-          question: "이 직무(JD) 기준으로 본인 경험을 어떤 순서로 매핑해 설명하시겠습니까?",
-          whyAsked: "서류의 핵심 강점과 JD 요구사항의 정합도를 면접 답변으로 연결하기 위한 질문입니다.",
-          answerPoints: ["JD 핵심 요구 2~3개 선정", "요구별 대응 경험 1개씩 배치", "근거 부족 항목은 보완 계획 제시"],
-          modelAnswer:
-            "먼저 JD의 핵심 요구를 비정형 데이터 구조화, 내부도구 자동화, 제품 실행력으로 정리합니다.\n다음으로 CareerFlow AI에서 단계형 워크플로우 설계와 모델 라우팅 운영 경험을 대응시킵니다.\nPM 경험은 요구사항 구조화와 우선순위 결정 역량으로 연결해 설명합니다.\n근거가 약한 항목은 현재 수준과 보완 계획을 분리해서 솔직하게 답변합니다."
-        }
-      ];
+      return buildFallbackInterviewReport(candidate, job, gapAnalysis);
     }
     try {
       const result = await runInterviewQuestionsChain(llm, candidate, job, prioritizedProjectContext, gapAnalysis);
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return result;
     } catch (error) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
-      return [
-        {
-          section: "core",
-          question: "강조 프로젝트에서 본인의 역할과 기여 범위를 어떻게 나눠 설명하시겠습니까?",
-          whyAsked: "JD의 책임 범위 검증과 프로젝트 실제 기여도 확인을 위해 생성되었습니다.",
-          answerPoints: ["요구사항-담당 범위-결과를 1세트로 설명", "팀 협업 경계와 본인 결정 지점을 분리"],
-          modelAnswer:
-            "저는 요구사항 정의, 워크플로우 설계, 구현 우선순위 결정까지 맡았습니다.\n이후 백엔드 체인 구조와 프론트 결과 화면을 직접 연결해 사용자 흐름을 완성했습니다.\n결과적으로 분석-보완-문서-면접 단계가 한 화면에서 재실행 가능해졌고, 반복 개선이 쉬워졌습니다.\n팀 작업에서는 설계 기준과 역할 경계를 먼저 정리해 충돌을 줄였습니다.",
-          caution: "개인 기여를 팀 전체 성과처럼 과장하지 마세요."
-        },
-        {
-          section: "core",
-          question: "핵심 기술 선택(스택/아키텍처)의 판단 기준과 트레이드오프는 무엇이었나요?",
-          whyAsked: "JD의 기술 의사결정 역량 항목과 포트폴리오 기술 선택 근거를 연결하기 위한 질문입니다.",
-          answerPoints: ["대안 2개 이상과 선택 이유", "성능/개발속도/운영비용 중 무엇을 우선했는지"],
-          modelAnswer:
-            "빠른 MVP 검증이 목표라서 Next.js + NestJS + Prisma 조합을 선택했습니다.\n프론트/백 타입 일관성과 유지보수를 위해 TypeScript를 기본으로 가져갔습니다.\n초기에는 기능 완성 속도를 우선했고, 이후 단계에서 로그 추적과 재실행 안정성을 보강했습니다.\n즉, 단기 속도와 장기 운영성을 단계적으로 맞추는 전략을 택했습니다.",
-          caution: "RAG/Agent/대규모 운영을 실제 수행하지 않았다면 단정적으로 말하지 마세요."
-        },
-        {
-          section: "core",
-          question: "요구사항 변경 시 우선순위를 어떻게 재조정했고 결과를 어떻게 검증했나요?",
-          whyAsked: "JD의 실행력/문제해결 역량을 실전 사례로 확인하기 위한 질문입니다.",
-          answerPoints: ["변경 전후 계획 차이", "검증 지표 또는 테스트 방식", "결과와 다음 개선점"],
-          modelAnswer:
-            "초기에는 기능 구현이 우선이었지만, 운영 중에는 사용자 체감 문제가 큰 항목부터 재정렬했습니다.\n예를 들어 문서 가독성/면접 리포트 구조/단계 독립성 이슈를 우선순위 상단으로 올렸습니다.\n변경 후에는 실제 화면 결과와 단계별 로그를 기준으로 동작을 확인했습니다.\n이 방식으로 기능 추가보다 사용성 개선 효과가 큰 작업을 먼저 처리했습니다.",
-          caution: "정량 수치가 없으면 추정치로 포장하지 말고 관찰 근거 중심으로 답변하세요."
-        },
-        {
-          section: "deep",
-          question: "예상과 달랐던 실패 사례와 이후 개선 조치를 설명해 주세요.",
-          whyAsked: "약한 근거 영역의 리스크 대응 역량을 확인하기 위해 생성되었습니다.",
-          answerPoints: ["문제 상황", "원인 분석", "재발 방지 조치"],
-          modelAnswer:
-            "문서 생성 단계에서 모델 응답이 문자열이 아닌 객체/배열로 내려와 fallback이 반복된 적이 있었습니다.\n원인은 파서 스키마가 문자열만 허용하던 부분이었습니다.\n응답 정규화 로직을 추가해 객체/배열/JSON 문자열도 읽을 수 있는 텍스트로 변환하도록 수정했습니다.\n이후 같은 유형의 실패가 줄고, 사용자 화면 품질도 함께 개선됐습니다.",
-          caution: "원인 없는 성공담 위주 답변은 신뢰도를 떨어뜨릴 수 있습니다."
-        },
-        {
-          section: "deep",
-          question: "이 직무(JD) 기준으로 본인 경험을 어떤 순서로 매핑해 설명하시겠습니까?",
-          whyAsked: "서류의 핵심 강점과 JD 요구사항의 정합도를 면접 답변으로 연결하기 위한 질문입니다.",
-          answerPoints: ["JD 핵심 요구 2~3개 선정", "요구별 대응 경험 1개씩 배치", "근거 부족 항목은 보완 계획 제시"],
-          modelAnswer:
-            "먼저 JD의 핵심 요구를 비정형 데이터 구조화, 내부도구 자동화, 제품 실행력으로 정리합니다.\n다음으로 CareerFlow AI에서 단계형 워크플로우 설계와 모델 라우팅 운영 경험을 대응시킵니다.\nPM 경험은 요구사항 구조화와 우선순위 결정 역량으로 연결해 설명합니다.\n근거가 약한 항목은 현재 수준과 보완 계획을 분리해서 솔직하게 답변합니다."
-        }
-      ];
+      return buildFallbackInterviewReport(candidate, job, gapAnalysis);
     }
   }
 
@@ -530,9 +848,10 @@ export class LangchainWorkflowService {
     prioritizedProjectContext?: string
   ): Promise<RewriteDraft> {
     const step: WorkflowStep = "rewriteForTargetJob";
-    const llm = this.getModelRouter(this.routeOf(step));
+    const routing = this.resolveRouting(step);
+    const llm = this.getLlmForModel(routing.model);
     if (!llm) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: "missing_api_key_or_provider_unavailable",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
@@ -545,13 +864,13 @@ export class LangchainWorkflowService {
     }
     try {
       const result = await runRewriteTailoringChain(llm, draft, job, prioritizedProjectContext);
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: false,
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)
       });
       return result;
     } catch (error) {
-      this.markExecution(step, {
+      this.markExecution(step, routing, {
         fallbackUsed: true,
         fallbackReason: error instanceof Error ? error.message : "unknown_error",
         hasProviderApiKey: this.provider === "gemini" ? Boolean(this.geminiApiKey) : Boolean(this.openaiApiKey)

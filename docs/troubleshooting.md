@@ -172,7 +172,7 @@
   2. 성공 메시지 외에 실제 대상 파일 내용을 후검증
 
 ## 2026-03-24 - Gemini 429 / 분석이 끝나지 않음처럼 보임(원인: 무료 티어 쿼터)
-- **문제**: 지원 적합도 분석 버튼 후 로딩이 매우 길거나 멈춘 것처럼 보임. 백엔드 로그에 `429 Too Many Requests`, `generate_content_free_tier_requests`, `limit: 20` 등
+- **문제**: 공고 대상 장·단점 분석 실행 후 로딩이 매우 길거나 멈춘 것처럼 보임. 백엔드 로그에 `429 Too Many Requests`, `generate_content_free_tier_requests`, `limit: 20` 등
 - **원인**: Gemini Developer API 무료 티어는 **모델별 일일 생성 요청 수**에 상한이 있음. 한도 초과 시 API가 `Retry-After`(예: 40초)를 주고, 클라이언트 재시도로 **한 단계만 수 분** 걸릴 수 있음. 분석은 LLM 호출이 여러 번 연속이라 체감상 “안 끝남”으로 보일 수 있음
 - **조치**:
   1. [Google AI Studio 쿼터/요금](https://ai.google.dev/gemini-api/docs/rate-limits) 확인, **익일 재시도** 또는 유료/상위 플랜 검토

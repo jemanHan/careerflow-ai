@@ -5,7 +5,10 @@ import { RequestRateLimiterService } from "../../common/request-rate-limiter.ser
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
 import { computeFitAnalysisSnapshot } from "../../common/fit-analysis.util";
 import { GapAnalysis } from "../langchain/workflow.types";
-import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
+import {
+  LangchainWorkflowService,
+  type FitAnalysisRoutingContext
+} from "../langchain/langchain-workflow.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -66,9 +69,18 @@ export class AnalysisService {
       }
     });
 
-    const candidate = await this.workflow.extractCandidateProfile(sourceText, prioritizedProjectContext);
-    const extractCandidateRoute = this.workflow.getRoutingInfo("extractCandidateProfile");
-    const extractCandidateExecution = this.workflow.getExecutionDiagnostics("extractCandidateProfile");
+    // 최초 ANALYZED 전에만 premium(재실행·force 포함, 이미 ANALYZED면 flash/high만 사용). 공고 대비 장·단점 파이프라인.
+    const initialFitCtx: FitAnalysisRoutingContext = {
+      usePremiumFitPass: app.status !== "ANALYZED"
+    };
+
+    const candidate = await this.workflow.extractCandidateProfile(
+      sourceText,
+      prioritizedProjectContext,
+      initialFitCtx
+    );
+    const extractCandidateRoute = this.workflow.getRoutingInfo("extractCandidateProfile", initialFitCtx);
+    const extractCandidateExecution = this.workflow.getExecutionDiagnostics("extractCandidateProfile", initialFitCtx);
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
@@ -81,9 +93,9 @@ export class AnalysisService {
       }
     });
 
-    const job = await this.workflow.extractJobPosting(app.targetJobPostingText);
-    const extractJobRoute = this.workflow.getRoutingInfo("extractJobPosting");
-    const extractJobExecution = this.workflow.getExecutionDiagnostics("extractJobPosting");
+    const job = await this.workflow.extractJobPosting(app.targetJobPostingText, initialFitCtx);
+    const extractJobRoute = this.workflow.getRoutingInfo("extractJobPosting", initialFitCtx);
+    const extractJobExecution = this.workflow.getExecutionDiagnostics("extractJobPosting", initialFitCtx);
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
@@ -96,9 +108,9 @@ export class AnalysisService {
       }
     });
 
-    const gap = await this.workflow.detectGaps(candidate, job);
-    const gapRoute = this.workflow.getRoutingInfo("detectGaps");
-    const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps");
+    const gap = await this.workflow.detectGaps(candidate, job, initialFitCtx);
+    const gapRoute = this.workflow.getRoutingInfo("detectGaps", initialFitCtx);
+    const gapExecution = this.workflow.getExecutionDiagnostics("detectGaps", initialFitCtx);
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
@@ -111,11 +123,23 @@ export class AnalysisService {
       }
     });
 
-    const fitAnalysis = computeFitAnalysisSnapshot(gap as GapAnalysis, candidate, null);
+    const fitAnalysis = computeFitAnalysisSnapshot(gap as GapAnalysis, candidate, job);
+    const isLimitedQuality =
+      (extractCandidateExecution.fallbackUsed || extractJobExecution.fallbackUsed || gapExecution.fallbackUsed) &&
+      (gap.matchedSignals?.length ?? 0) === 0 &&
+      (gap.missingSignals?.length ?? 0) === 0 &&
+      (gap.weakEvidence?.length ?? 0) === 0;
+    const fitAnalysisWithQuality = isLimitedQuality
+      ? {
+          ...fitAnalysis,
+          analysisQuality: "limited",
+          qualityReason: "LLM fallback 경로에서 유효 신호가 부족해 분석 품질이 제한되었습니다."
+        }
+      : fitAnalysis;
 
-    const questions = await this.workflow.generateFollowUpQuestions(gap);
-    const followUpRoute = this.workflow.getRoutingInfo("generateFollowUpQuestions");
-    const followUpExecution = this.workflow.getExecutionDiagnostics("generateFollowUpQuestions");
+    const questions = await this.workflow.generateFollowUpQuestions(gap, initialFitCtx);
+    const followUpRoute = this.workflow.getRoutingInfo("generateFollowUpQuestions", initialFitCtx);
+    const followUpExecution = this.workflow.getExecutionDiagnostics("generateFollowUpQuestions", initialFitCtx);
     await this.prisma.workflowRun.create({
       data: {
         applicationId,
@@ -135,7 +159,7 @@ export class AnalysisService {
         candidateProfileJson: candidate as unknown as Prisma.InputJsonValue,
         jobPostingJson: job as unknown as Prisma.InputJsonValue,
         gapAnalysisJson: gap as unknown as Prisma.InputJsonValue,
-        fitAnalysisJson: fitAnalysis as unknown as Prisma.InputJsonValue,
+        fitAnalysisJson: fitAnalysisWithQuality as unknown as Prisma.InputJsonValue,
         followUpQuestions: questions
       }
     });

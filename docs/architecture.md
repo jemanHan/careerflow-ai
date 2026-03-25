@@ -1,7 +1,7 @@
 # 아키텍처
 
 ## 시스템 구조
-- Frontend (Next.js): 입력/결과 조회/지원 적합도 분석/대화형 보완/문서 초안/면접 대비 리포트 화면
+- Frontend (Next.js): 입력/결과 조회/공고 대상 장·단점 분석/대화형 보완/문서 초안/면접 대비 리포트 화면
 - Backend (NestJS): 모듈형 API + 워크플로우 오케스트레이션
 - DB (PostgreSQL + Prisma): 상태, 단계 로그, 산출물 영속화
 - AI (Gemini Developer API + LangChain): 단계별 RunnableSequence 체인
@@ -60,10 +60,11 @@ backend/
 8. `GENERATE_INTERVIEW`: 면접 대비 리포트 생성
 9. `REWRITE_FOR_JOB`: 채용공고 맞춤 리라이트
 
-## 지원 적합도 스냅샷 (`fitAnalysisJson`)
-- 분석 완료 시점에 갭 분석 결과로부터 **휴리스틱 점수(0–100)** 와 강점/약점/추천 보완 방향을 저장한다(LLM 추가 호출 없음).
-- 점수는 **AI 추정 서류·직무 적합도**이며 채용 합격을 보장하지 않음(프론트·스냅샷에 고지 문구 포함).
-- 후속 답변 제출 후 갭이 재계산되면 점수를 갱신하고 `previousEstimatedFitScore`/`scoreDelta`로 변화량을 남긴다.
+## 공고 대상 장·단점 스냅샷 (`fitAnalysisJson`)
+- 분석 완료 시점에 갭 분석 결과로부터 **강점/약점/추천 보완 방향** 요약을 저장한다(LLM 추가 호출 없음). **수치 적합도 점수는 사용하지 않는다.**
+- 요약은 JD 요구 신호 vs 후보자 근거 신호의 매칭/약함/누락을 바탕으로 하며, 특정 직군 버킷에 고정하지 않는다.
+- 스냅샷의 고지 문구로 채용·평가 결과를 보장하지 않음을 명시한다.
+- 후속 답변 제출 후 갭이 재계산되면 동일 방식으로 `fitAnalysisJson`을 갱신한다.
 
 ## 현재 영속화 모델 (PostgreSQL)
 - `TestUser`:
@@ -100,13 +101,13 @@ backend/
 
 ## 모델 라우팅 (현재 기준)
 - **역할 기반 이중 라우트**를 유지한다(기본·고품질을 한 모델로 합치지 않음). 무료 티어는 모델별 일일 한도가 분리되어 있어, 작업·비용·품질을 분리해 설명·포트폴리오 가치를 보존한다.
-- 기본 모델(`GEMINI_DEFAULT_MODEL`, 기본값 `gemini-3.1-flash-lite`) — **light**:
+- 기본 모델(`GEMINI_DEFAULT_MODEL`) — **light / Gemini Flash Lite 계열**:
   - 후보자 프로필 추출
   - 채용공고 분석
   - 갭 탐지
   - 후속 질문 생성(서류 보완용)
   - 면접 대비 리포트 생성
-- 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL`, 기본값 `gemini-2.5-flash`) — **quality**:
+- 고품질 모델(`GEMINI_HIGH_QUALITY_MODEL`) — **quality / Gemini Flash 계열**:
   - 문서 3종 생성
   - 채용공고 맞춤 리라이트
 - provider를 `openai`로 바꾸면 `OPENAI_*` 모델 키를 사용
@@ -156,6 +157,11 @@ backend/
 - `POST /v1/generated-documents/generate`
 - `POST /v1/interview/generate`
 
+## CORS/배포 안전장치
+- CORS는 `CORS_ORIGIN` 환경변수 기반 화이트리스트로 동작한다(콤마 구분 다중 도메인 지원).
+- 기본 허용 origin은 `http://localhost:3000`이며, 배포 환경에서는 명시 설정이 필요하다.
+- 프론트는 production에서 `NEXT_PUBLIC_API_BASE_URL` 미설정 시 실패하도록 하여 로컬 백엔드 오연결을 방지한다.
+
 ## 프론트엔드 구현 상태
 - `frontend/app/page.tsx`: 진입 페이지
 - `frontend/app/new/page.tsx`: 소스 입력 폼
@@ -191,7 +197,7 @@ backend/
 - 단, 현재는 full RAG(벡터DB 검색 + 주입 파이프라인) 미구현 상태이며, 이를 현재 구현으로 주장하지 않음.
 - 확장 시나리오:
   - 경량 단계: 유사 채용공고, 사용자 저장 히스토리, 이전 생성 결과를 선택 조회해 프롬프트 컨텍스트에 보강
-  - 고도화 단계: 임베딩 인덱스/검색 전략을 단계별 체인(적합도/문서/면접)에 맞춰 분리 적용
+  - 고도화 단계: 임베딩 인덱스/검색 전략을 단계별 체인(장·단점 분석/문서/면접)에 맞춰 분리 적용
 - 설계 원칙:
   - retrieval은 품질 보강 레이어로 추가하고, 기존 워크플로우 안정성(락/재사용/로그)은 유지
   - "현재 동작"과 "향후 확장"을 문서/포트폴리오에서 명확히 분리

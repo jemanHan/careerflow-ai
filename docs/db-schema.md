@@ -7,7 +7,7 @@
 - 주요 컬럼:
   - `status`: `CREATED | ANALYZED | FOLLOW_UP_COMPLETED | DOCUMENTS_GENERATED`
   - 입력 원문: `resumeText`, `portfolioText`, `projectDescriptions`, `targetJobPostingText`
-  - 분석 JSON: `candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`, `fitAnalysisJson`(적합도 스냅샷·점수 변화)
+  - 분석 JSON: `candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`, `fitAnalysisJson`(공고 대비 장·단점·보완 요약 스냅샷)
   - 보완 JSON: `followUpQuestions`, `followUpAnswersJson`
   - 생성 JSON: `generatedDraftJson`, `rewrittenDraftJson`
   - 감사: `createdAt`, `updatedAt`

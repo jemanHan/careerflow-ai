@@ -8,11 +8,11 @@
 |---|---|---|---|
 | AI/LLM 기반 문제 해결 | `backend/src/modules/langchain/*`, `analysis`/`followup-questions`/`generated-documents` API | 이력서/포트폴리오/채용공고를 구조화 JSON으로 변환 후 갭 분석, 후속 질문, 문서 생성까지 단계형 실행 | "단일 생성기가 아니라, 정보 부족을 탐지하고 보완하는 LLM 워크플로우를 설계했습니다." |
 | LLM API 실무 운용 | `langchain-workflow.service.ts`, `.env.example` | 환경변수 기반 provider/model 주입 + fallback 처리 + 실행 메타데이터 기록 | "LLM 호출 실패 시에도 전체 플로우가 중단되지 않도록 fallback과 단계 로그를 설계했습니다." |
-| 모델 라우팅 최적화 | `langchain-workflow.service.ts` | 단계별 모델 라우팅(light vs quality)으로 비용/품질 균형 | "분석·갭·서류 보완·면접 리포트는 경량 모델, 문서·리라이트는 고품질 모델로 분리해 비용 대비 품질을 관리했습니다." |
+| 모델 라우팅 최적화 | `langchain-workflow.service.ts` | 단계별 모델 라우팅(light vs quality)으로 비용/품질 균형 | "분석·갭·서류 보완·면접 리포트는 경량 Flash Lite 계열, 문서·리라이트는 고품질 Flash 계열로 분리해 비용 대비 품질을 관리했습니다." |
 | LangChain 실사용 역량 | `langchain-workflow.service.ts` 및 체인 분리 예정 파일 | `PromptTemplate` + 구조화 파싱 + `RunnableSequence`로 체인 모듈화 | "모든 AI 단계를 LangChain 체인으로 분리해 디버깅/재사용/개선이 가능하도록 만들었습니다." |
 | TypeScript 실무 역량 | Backend + Frontend 전역 | DTO/class-validator/Zod 기반 타입 안정성, JSON 스키마 명시화 | "입력-분석-출력 전 구간에 타입 계약을 두어 AI 결과도 코드 레벨에서 검증했습니다." |
 | NestJS 기반 백엔드 설계 | `AppModule`, `SourceDocumentsModule`, `AnalysisModule`, `PrismaModule`, `LangchainModule` | 모듈형 구조, REST API, ValidationPipe, 서비스 레이어 분리 | "NestJS 모듈 경계로 AI 오케스트레이션과 도메인 로직을 분리해 유지보수성을 확보했습니다." |
-| Next.js/React 활용 능력 | `frontend/app/new/page.tsx`, `frontend/app/results/[id]/page.tsx` | 적합도 분석→보완 입력→문서/면접 리포트 단계형 플로우를 페이지 기반으로 구현 | "단순 채팅 UI가 아니라 실제 취업 준비 흐름을 반영한 태스크형 화면을 구현했습니다." |
+| Next.js/React 활용 능력 | `frontend/app/new/page.tsx`, `frontend/app/results/[id]/page.tsx` | 공고 대상 장·단점 분석→보완 입력→문서/면접 리포트 단계형 플로우를 페이지 기반으로 구현 | "단순 채팅 UI가 아니라 실제 취업 준비 흐름을 반영한 태스크형 화면을 구현했습니다." |
 | PostgreSQL 데이터 모델링 | `prisma/schema.prisma` | Application 중심 상태 전이 + 분석/생성 결과 JSON 저장 | "AI 중간 산출물을 DB에 남겨 재현성과 개선 이력을 확보했습니다." |
 | 배포 가능성/운영 준비 | `README.md`, `.env.example`, `docs/api-spec.md`, `docs/architecture.md` | 실행 절차, 환경변수, API/아키텍처 문서화 | "코드뿐 아니라 재현 가능한 실행/배포 문서를 함께 제공해 실무 인수인계 수준으로 정리했습니다." |
 | End-to-End 오너십 | 루트 문서 + 백엔드 구현 + 이후 프론트 연결 | 문제정의, 설계, 구현, 저장, 문서화, 배포 준비를 단일 프로젝트로 수행 | "요구사항 해석부터 제품 구현/검증/문서화까지 전 과정을 직접 리딩했습니다." |

@@ -1,4 +1,16 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/v1";
+const FALLBACK_LOCAL_API_BASE = "http://localhost:4000/v1";
+
+function resolveApiBase() {
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  const nodeEnv = process.env.NODE_ENV;
+  if (configured) return configured;
+  if (nodeEnv === "production") {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL is required in production.");
+  }
+  return FALLBACK_LOCAL_API_BASE;
+}
+
+const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
   status: number;
@@ -109,6 +121,20 @@ export async function fetchApplication(applicationId: number) {
   return request(`/source-documents/${applicationId}`);
 }
 
+export type UpdateApplicationSourcesPayload = {
+  resumeText: string;
+  portfolioText: string;
+  projectDescriptions: string[];
+  targetJobPostingText: string;
+};
+
+export async function updateApplicationSources(applicationId: number, payload: UpdateApplicationSourcesPayload) {
+  return request(`/source-documents/${applicationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function createTestUser() {
   return request<{ id: string }>("/source-documents/test-user", {
     method: "POST"
@@ -121,7 +147,7 @@ export type SavedWorkflowItem = {
   createdAt: string;
   updatedAt: string;
   targetJobPostingText: string;
-  fitAnalysisJson?: { estimatedFitScore?: number } | null;
+  fitAnalysisJson?: { computedAt?: string; estimatedFitScore?: number } | null;
 };
 
 export async function listMyWorkflows(testUserId: string) {

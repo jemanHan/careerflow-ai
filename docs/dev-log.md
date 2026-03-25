@@ -1,5 +1,15 @@
 # Dev Log
 
+## 2026-03-25
+- fit 분석 회귀 복구 (신호 소실 이슈)
+  - 원인: UI-safe 필터가 단일 기술 신호(TypeScript/NestJS/PostgreSQL/LangChain 등)까지 과도하게 제거하면서 gap 신호가 비는 케이스 발생
+  - 조치: 핵심 단일 기술 신호 allowlist 도입, gap empty 시 candidate/job 신호 기반 백업 추론으로 기본점수 고착(60) 완화
+  - 영향: 강점/부족 신호가 빈 배열로 붕괴되는 빈도 감소, 장·단점 스냅샷의 설명 가능성 회복
+- Git/저장소 위생: 로컬 백업 zip·`reference-main-snapshot/`는 `.gitignore`로 제외(실수 커밋 방지)
+- 포트폴리오 문서: **`docs/portfolio-case-study.md`** 추가 — 삭제·통합(`llm`/`applications` 중복 제거), 모델 라우팅(Gemini light/quality/premium 옵션), 제품 데이터(`fitAnalysisJson`·`WorkflowRun`), 프론트 초안 저장, **문제–원인–조치** 표 정리
+- `README.md` Docs 목록에 케이스 스터디 링크, `portfolio-points.md`에서 교차 참조
+- 프론트(이전 배치와 합산): 전역 네비(`GlobalAppNav`), `/new` **localStorage** 초안·결과 페이지 보완 답변 **sessionStorage** 초안·첫 persist 스킵 가드
+
 ## 2026-03-23
 - 초기 저장소 구조 확인
 - `backend` NestJS + Prisma + LangChain MVP 골격 추가
@@ -127,13 +137,13 @@
   - 라이브 URL 질문: 입력에 배포/URL 근거가 있을 때만 생성하도록 면접 프롬프트 제한
   - ~~`generateInterviewQuestions`를 quality로 상향~~ → 이후 설계상 **면접 질문은 light(기본 모델), 문서·리라이트만 quality**로 재정렬(2026-03-24 후속 항목 참고)
   - 결과 화면에 후속 질문(서류 보완) vs 면접 질문(심층 검증) 안내 문구 추가(`frontend/components/results-client.tsx`)
-- 제품 흐름 재프레이밍 (적합도 → 보완 → 문서 → 면접 리포트):
+- 제품 흐름 재프레이밍 (장·단점 분석 → 보완 → 문서 → 면접 리포트):
   - `Application.fitAnalysisJson` 추가(마이그레이션 `20260324043000_add_fit_analysis_json`)
-  - 갭 분석 기반 휴리스틱 적합도 점수·강점/약점/추천 보완·이전 대비 델타(`backend/src/common/fit-analysis.util.ts`)
+  - 갭 분석 기반 강점/약점/추천 보완 스냅샷(`backend/src/common/fit-analysis.util.ts`) — **휴리스틱 적합도 점수·델타는 제거됨(2026-03-25)**
   - 분석 완료 시 `fitAnalysisJson` 저장(`analysis.service.ts`)
-  - 후속 답변 제출 시 갭 재탐지 + 적합도 갱신(`followup-questions.service.ts`)
+  - 후속 답변 제출 시 갭 재탐지 + `fitAnalysisJson` 갱신(`followup-questions.service.ts`)
   - 후속 질문 프롬프트: 번호형 Qn 대신 코칭형 문장 유도(`follow-up-questions.chain.ts`)
-  - ~~결과 UI: ①적합도 ②보완 ③문서 ④면접 리포트~~ -> 현재는 ①적합도 / ②문서 / ③면접 리포트 + 대화형 보완(무번호)로 정리
+  - 결과 UI: ①공고 대상 장·단점 분석 / ②문서 / ③면접 리포트 + 대화형 보완(무번호)
 - Gemini 429 시 분석 지연 완화: LLM 클라이언트 `maxRetries: 0`으로 쿼터 초과 시 재시도 대기 시간 축소(`langchain-workflow.service.ts`), `docs/troubleshooting.md`에 무료 티어 한도 설명 추가
 - Gemini 모델 라우팅 재정렬(역할·포트폴리오 설명 가치 유지):
   - 기본값 `GEMINI_DEFAULT_MODEL=gemini-3.1-flash-lite`(light), `GEMINI_HIGH_QUALITY_MODEL=gemini-2.5-flash`(quality) — **두 슬롯을 단일 모델로 통합하지 않음**

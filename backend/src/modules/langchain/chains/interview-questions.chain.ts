@@ -28,12 +28,12 @@ export async function runInterviewQuestionsChain(
   const parser = new JsonOutputParser<{ items: InterviewReportItem[] }>();
   const prompt = PromptTemplate.fromTemplate(
     [
-      "You generate Korean TECHNICAL INTERVIEW prep report cards for hiring managers.",
-      "Purpose: simulate what an interviewer would ask to verify depth of ownership, trade-offs, and real delivery — NOT to collect missing CV facts.",
+      "You generate Korean interview prep report cards for hiring managers.",
+      "Purpose: verify ownership, decision quality, execution depth, and requirement fit — NOT to collect missing CV facts.",
       "",
       "STRICT differentiation from 'follow-up' questions (analysis step):",
-      "- Follow-up questions = short prompts to fill gaps in written application evidence (what to add to the resume).",
-      "- Interview questions HERE = behavioral/technical depth: design rationale, metrics, failure modes, stakeholder trade-offs, how you would defend claims in a panel.",
+      "- Follow-up questions = short prompts to fill gaps in written application evidence.",
+      "- Interview questions HERE = role-agnostic depth: judgment, execution, risk handling, stakeholder trade-offs, and result validation.",
       "- Do NOT copy the same wording style as gap-filling prompts. Avoid 'OO 경험을 더 자세히 적어주세요' style.",
       "",
       "Content rules:",
@@ -52,6 +52,7 @@ export async function runInterviewQuestionsChain(
       "- Do NOT ask for a live URL, demo link, or portfolio site unless the candidate or project text explicitly mentions deployment, production URL, or public demo.",
       "- If no URL is evidenced, ask about how they validated quality (local/staging, metrics, user test) instead.",
       "",
+      "Do not assume fixed role families (frontend/backend/fullstack/etc.) unless explicitly stated in inputs.",
       "Do not assume RAG/agents/production scale unless explicitly stated in inputs.",
       "Return strict JSON only.",
       "{format_instructions}",

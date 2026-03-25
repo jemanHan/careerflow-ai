@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
 import { CreateSourceDocumentDto } from "./dto/create-source-document.dto";
+import { UpdateApplicationSourcesDto } from "./dto/update-application-sources.dto";
 import { SourceDocumentsService } from "./source-documents.service";
 
 @Controller("source-documents")
@@ -27,5 +28,14 @@ export class SourceDocumentsController {
   @Get(":id")
   getById(@Param("id") id: string, @Headers("x-test-user-id") activeTestUserId?: string) {
     return this.sourceDocumentsService.getById(Number(id), activeTestUserId);
+  }
+
+  @Patch(":id")
+  patchSources(
+    @Param("id") id: string,
+    @Body() dto: UpdateApplicationSourcesDto,
+    @Headers("x-test-user-id") activeTestUserId?: string
+  ) {
+    return this.sourceDocumentsService.updateSources(Number(id), dto, activeTestUserId);
   }
 }

@@ -43,6 +43,31 @@ const candidateFlexibleSchema = z.object({
   )
 });
 
+const GENERIC_STRENGTHS = new Set(["문제 해결", "협업", "실행", "커뮤니케이션", "책임감", "성실함"]);
+
+function uniqueStrings(values: string[]): string[] {
+  return values
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
+function enrichStrengths(raw: CandidateProfile): string[] {
+  const fromStrengths = raw.strengths ?? [];
+  const fromTech = (raw.experiences ?? []).flatMap((exp) => exp.techStack ?? []);
+  const fromProjectEvidence = (raw.projects ?? []).flatMap((p) => p.evidence ?? []);
+  const concreteCandidates = uniqueStrings([...fromTech, ...fromProjectEvidence]).filter(
+    (v) => v.length >= 3 && v.length <= 40
+  );
+
+  const nonGenericStrengths = fromStrengths.filter((v) => !GENERIC_STRENGTHS.has(v));
+  const merged = uniqueStrings([...nonGenericStrengths, ...concreteCandidates]);
+
+  // 강점이 전부 일반론으로 붕괴되는 경우 concrete 신호를 우선 노출
+  if (merged.length > 0) return merged.slice(0, 8);
+  return uniqueStrings(fromStrengths).slice(0, 6);
+}
+
 export async function runCandidateProfileChain(
   llm: BaseChatModel,
   sourceText: string,
@@ -52,7 +77,10 @@ export async function runCandidateProfileChain(
   const prompt = PromptTemplate.fromTemplate(
     [
       "You are a parser for a hiring workflow product.",
-      "Extract candidate profile from resume, portfolio and project text.",
+      "Extract candidate evidence signals from resume, portfolio and project text.",
+      "Do not assume software-only jobs; keep wording role-agnostic.",
+      "Preserve concrete evidence such as tools, technologies, methods, deliverables, and project names.",
+      "Do not collapse strengths into generic soft skills only.",
       "If prioritized project context exists, treat it as primary project evidence.",
       "Return strict JSON only.",
       "{format_instructions}",
@@ -74,6 +102,13 @@ export async function runCandidateProfileChain(
 
   const normalized: CandidateProfile = {
     ...raw,
+    strengths: enrichStrengths({
+      ...raw,
+      projects: raw.projects.map((project) => ({
+        ...project,
+        evidence: Array.isArray(project.evidence) ? project.evidence : [project.evidence]
+      }))
+    }),
     projects: raw.projects.map((project) => ({
       ...project,
       evidence: Array.isArray(project.evidence) ? project.evidence : [project.evidence]

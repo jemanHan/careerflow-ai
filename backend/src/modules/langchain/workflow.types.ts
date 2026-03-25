@@ -15,10 +15,16 @@ export type CandidateProfile = {
 
 export type JobPostingProfile = {
   role: string;
+  summary?: string;
   requiredSkills: string[];
   preferredSkills: string[];
   responsibilities: string[];
   evaluationSignals: string[];
+  domainSignals?: string[];
+  collaborationSignals?: string[];
+  toolSignals?: string[];
+  senioritySignals?: string[];
+  outputExpectations?: string[];
 };
 
 export type GapAnalysis = {

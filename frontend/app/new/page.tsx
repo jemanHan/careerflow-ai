@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, createSource } from "../../lib/api";
-import { DEMO_TEMPLATES } from "../../lib/demo-sample-input";
-import { getSimilarJobPostings } from "../../lib/similar-jobs";
+import { demoTemplates } from "../../lib/demo-sample-input";
+import { clearNewWorkflowDraft, loadNewWorkflowDraft, saveNewWorkflowDraft } from "../../lib/new-workflow-draft";
 import { getStoredTestUserId, storeTestUserId } from "../../lib/test-user";
 
 const TEST_USER_ID_REGEX = /^\d{3}$/;
@@ -18,17 +18,46 @@ export default function NewWorkflowPage() {
   const [targetJobPostingText, setTargetJobPostingText] = useState("");
   const [testUserId, setTestUserId] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const similarJobs = useMemo(
-    () => getSimilarJobPostings(targetJobPostingText).slice(0, 3),
-    [targetJobPostingText]
-  );
+  const [draftHydrated, setDraftHydrated] = useState(false);
 
   useEffect(() => {
-    setTestUserId(getStoredTestUserId());
+    const stored = getStoredTestUserId();
+    const draft = loadNewWorkflowDraft();
+    if (draft) {
+      setResumeText(draft.resumeText);
+      setPortfolioText(draft.portfolioText);
+      setProjectText(draft.projectText);
+      setTargetJobPostingText(draft.targetJobPostingText);
+      setTestUserId(draft.testUserId || stored);
+    } else {
+      setTestUserId(stored);
+    }
+    setDraftHydrated(true);
   }, []);
 
+  useEffect(() => {
+    if (!draftHydrated) return;
+    const t = window.setTimeout(() => {
+      saveNewWorkflowDraft({
+        resumeText,
+        portfolioText,
+        projectText,
+        targetJobPostingText,
+        testUserId
+      });
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [
+    draftHydrated,
+    resumeText,
+    portfolioText,
+    projectText,
+    targetJobPostingText,
+    testUserId
+  ]);
+
   function applyTemplate(templateId: string) {
-    const template = DEMO_TEMPLATES.find((item) => item.id === templateId);
+    const template = demoTemplates.find((item) => item.id === templateId);
     if (!template) {
       return;
     }
@@ -77,19 +106,20 @@ export default function NewWorkflowPage() {
     <main className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <h1 className="text-2xl font-semibold text-slate-900">소스 입력</h1>
       <p className="text-sm text-slate-600">
-        `resumeText`, `portfolioText`, `targetJobPostingText`는 각각 최소 20자 이상이어야 합니다.
+        `resumeText`, `portfolioText`, `targetJobPostingText`는 각각 최소 20자 이상이어야 합니다. 입력 내용은 이 브라우저에
+        자동으로 초안 저장됩니다.
       </p>
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <p className="text-sm font-medium text-slate-800">빠른 입력 템플릿</p>
         <div className="flex flex-wrap items-center gap-2">
-          {DEMO_TEMPLATES.map((template) => (
+          {demoTemplates.map((template) => (
             <div key={template.id} className="rounded-lg border border-slate-200 bg-white p-2">
               <button
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
                 onClick={() => applyTemplate(template.id)}
                 type="button"
               >
-                {template.label}
+                {template.title}
               </button>
               <p className="mt-1 text-xs text-slate-500">{template.description}</p>
             </div>
@@ -164,35 +194,6 @@ export default function NewWorkflowPage() {
         </button>
       </form>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <h2 className="text-base font-semibold text-slate-900">유사 공고 보기</h2>
-        <p className="text-xs text-slate-600">
-          타겟 채용공고의 키워드와 겹치는 항목만 1~3개 보여주는 참고 섹션입니다. 점수/문서 생성 로직에는 아직 연결하지 않습니다.
-        </p>
-        {similarJobs.length === 0 ? (
-          <p className="text-sm text-slate-500">채용공고 텍스트를 입력하면 유사 공고가 표시됩니다.</p>
-        ) : (
-          <div className="space-y-2">
-            {similarJobs.map((job) => (
-              <article key={`${job.companyName}-${job.jobTitle}`} className="rounded-lg border border-slate-200 bg-white p-3">
-                <p className="text-sm font-semibold text-slate-900">
-                  {job.companyName} · {job.jobTitle}
-                </p>
-                <p className="mt-1 text-xs text-slate-600">매칭 키워드: {job.keywords.join(", ")}</p>
-                <p className="mt-1 text-xs text-slate-600">{job.reason}</p>
-                <a
-                  href={job.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-block text-xs font-medium text-blue-600 hover:underline"
-                >
-                  공고 링크 보기
-                </a>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
     </main>
   );
 }

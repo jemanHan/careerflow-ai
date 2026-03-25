@@ -44,7 +44,7 @@ Base URL: `/v1`
 
 ## 4) 후속 답변 제출 (대화형 보완)
 ### `POST /followup-questions/submit`
-`REGENERATE_CANDIDATE` 실행 후 갱신된 후보자로 **`DETECT_GAP` 재실행**하여 `gapAnalysisJson`·`fitAnalysisJson`(적합도 점수·델타)을 갱신한다.
+`REGENERATE_CANDIDATE` 실행 후 갱신된 후보자로 **`DETECT_GAP` 재실행**하여 `gapAnalysisJson`·`fitAnalysisJson`(장·단점·보완 요약)을 갱신한다.
 
 ### Request
 ```json

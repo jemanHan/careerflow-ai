@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { RequestRateLimiterService } from "../../common/request-rate-limiter.service";
 import { WORKFLOW_STAGE } from "../../common/workflow-stage.constants";
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
 import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
 import { CandidateProfile, JobPostingProfile } from "../langchain/workflow.types";
+import { hasStoredFitAnalysis } from "../../common/fit-analysis.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { GenerateDocumentsDto } from "./dto/generate-documents.dto";
 
@@ -34,6 +35,9 @@ export class GeneratedDocumentsService {
     const job = app.jobPostingJson as JobPostingProfile | null;
     const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
     if (!candidate || !job) throw new NotFoundException("Analysis data not found.");
+    if (!hasStoredFitAnalysis(app.fitAnalysisJson)) {
+      throw new BadRequestException("먼저 공고 대상 장·단점 분석(1단계)을 완료한 뒤 문서 생성을 진행해 주세요.");
+    }
 
     const existingDraft = (app.generatedDraftJson ?? {}) as Record<string, unknown>;
     const hasExistingDocuments =

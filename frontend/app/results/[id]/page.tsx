@@ -17,10 +17,6 @@ export default async function ResultPage({ params }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4">
-      <h1 className="text-2xl font-semibold">워크플로우 결과 #{applicationId}</h1>
-      <p className="text-sm text-slate-600">
-        분석 실행/후속답변/문서생성/면접질문생성을 순서대로 눌러 결과를 확인하세요.
-      </p>
       <ResultsClient applicationId={applicationId} />
     </main>
   );

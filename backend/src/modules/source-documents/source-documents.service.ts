@@ -1,6 +1,7 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateSourceDocumentDto } from "./dto/create-source-document.dto";
+import { UpdateApplicationSourcesDto } from "./dto/update-application-sources.dto";
 
 const TEST_USER_ID_REGEX = /^\d{3}$/;
 
@@ -85,6 +86,28 @@ export class SourceDocumentsService {
       this.assertSameActiveTestUser(application.testUserId, activeTestUserId);
     }
     return application;
+  }
+
+  async updateSources(id: number, dto: UpdateApplicationSourcesDto, activeTestUserId?: string) {
+    await this.getById(id, activeTestUserId);
+    const data: {
+      resumeText?: string;
+      portfolioText?: string;
+      projectDescriptions?: string[];
+      targetJobPostingText?: string;
+    } = {};
+    if (dto.resumeText !== undefined) data.resumeText = dto.resumeText;
+    if (dto.portfolioText !== undefined) data.portfolioText = dto.portfolioText;
+    if (dto.projectDescriptions !== undefined) data.projectDescriptions = dto.projectDescriptions;
+    if (dto.targetJobPostingText !== undefined) data.targetJobPostingText = dto.targetJobPostingText;
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException("수정할 필드를 한 개 이상 보내 주세요.");
+    }
+    return this.prisma.application.update({
+      where: { id },
+      data,
+      include: { workflowRuns: { orderBy: { createdAt: "asc" } } }
+    });
   }
 
   private generateReadableTestUserId() {

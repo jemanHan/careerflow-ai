@@ -1,50 +1,23 @@
-export type SimilarJobPosting = {
-  companyName: string;
-  jobTitle: string;
+export type JobSearchKeywordRecommendation = {
+  rank: 1 | 2 | 3;
+  focusRole: string;
   keywords: string[];
-  link: string;
+  query: string;
   reason: string;
 };
 
-type JobSeed = {
-  companyName: string;
-  jobTitle: string;
-  keywords: string[];
-  link: string;
+type JobSignalInput = {
+  role?: string;
+  requiredSkills?: string[];
+  preferredSkills?: string[];
+  responsibilities?: string[];
+  evaluationSignals?: string[];
+  domainSignals?: string[];
+  collaborationSignals?: string[];
+  toolSignals?: string[];
+  senioritySignals?: string[];
+  outputExpectations?: string[];
 };
-
-const JOB_SEEDS: JobSeed[] = [
-  {
-    companyName: "데모테크",
-    jobTitle: "Product Engineer (TypeScript/NestJS)",
-    keywords: ["typescript", "nestjs", "postgresql", "llm", "workflow"],
-    link: "https://example.com/jobs/product-engineer-typescript",
-  },
-  {
-    companyName: "커리어플랫폼",
-    jobTitle: "Fullstack Engineer (Next.js + AI Features)",
-    keywords: ["next.js", "react", "typescript", "ai", "product"],
-    link: "https://example.com/jobs/fullstack-ai-features",
-  },
-  {
-    companyName: "데이터랩",
-    jobTitle: "Backend Engineer (Automation Tools)",
-    keywords: ["backend", "nestjs", "automation", "postgresql", "api"],
-    link: "https://example.com/jobs/backend-automation-tools",
-  },
-  {
-    companyName: "빌드업",
-    jobTitle: "Frontend Product Engineer",
-    keywords: ["react", "next.js", "ux", "dashboard", "typescript"],
-    link: "https://example.com/jobs/frontend-product-engineer",
-  },
-  {
-    companyName: "에이아이웍스",
-    jobTitle: "AI Service Engineer (LLM Integrations)",
-    keywords: ["llm", "langchain", "api", "prompt", "product"],
-    link: "https://example.com/jobs/ai-service-engineer",
-  },
-];
 
 function tokenize(text: string) {
   return text
@@ -54,28 +27,49 @@ function tokenize(text: string) {
     .filter((word) => word.length >= 2);
 }
 
-export function getSimilarJobPostings(targetJobPostingText: string): SimilarJobPosting[] {
-  const tokens = new Set(tokenize(targetJobPostingText));
-  if (tokens.size === 0) {
+export function getSimilarJobPostings(targetJobPostingText: string, jobSignals?: JobSignalInput): JobSearchKeywordRecommendation[] {
+  const signalText = [
+    targetJobPostingText,
+    jobSignals?.role ?? "",
+    ...(jobSignals?.requiredSkills ?? []),
+    ...(jobSignals?.preferredSkills ?? []),
+    ...(jobSignals?.responsibilities ?? []),
+    ...(jobSignals?.evaluationSignals ?? []),
+    ...(jobSignals?.domainSignals ?? []),
+    ...(jobSignals?.collaborationSignals ?? []),
+    ...(jobSignals?.toolSignals ?? []),
+    ...(jobSignals?.senioritySignals ?? []),
+    ...(jobSignals?.outputExpectations ?? [])
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const tokens = tokenize(signalText);
+  if (tokens.length === 0) {
     return [];
   }
 
-  return JOB_SEEDS.map((seed) => {
-    const matched = seed.keywords.filter((keyword) => tokens.has(keyword.toLowerCase()));
+  const uniq = tokens.filter((t, idx, arr) => arr.indexOf(t) === idx);
+  const roleToken = tokenize(jobSignals?.role ?? targetJobPostingText).slice(0, 3).join(" ");
+  const required = (jobSignals?.requiredSkills ?? []).flatMap((v) => tokenize(v)).slice(0, 8);
+  const preferred = (jobSignals?.preferredSkills ?? []).flatMap((v) => tokenize(v)).slice(0, 6);
+  const responsibility = (jobSignals?.responsibilities ?? []).flatMap((v) => tokenize(v)).slice(0, 6);
+  const base = [...required, ...preferred, ...responsibility, ...uniq].filter((v, i, arr) => arr.indexOf(v) === i);
+
+  const packs = [
+    base.slice(0, 4),
+    [...required.slice(0, 2), ...preferred.slice(0, 2), ...responsibility.slice(0, 2)].filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 4),
+    [...required.slice(2, 5), ...responsibility.slice(0, 2), ...uniq.slice(0, 2)].filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 4)
+  ].filter((p) => p.length > 0).slice(0, 3);
+
+  return packs.map((pack, index) => {
+    const rolePart = roleToken || "job";
+    const query = `${rolePart} ${pack.join(" ")}`.trim();
     return {
-      seed,
-      matched,
-      score: matched.length,
+      rank: (index + 1) as 1 | 2 | 3,
+      focusRole: jobSignals?.role?.trim() || "JD 중심 직무",
+      keywords: pack.slice(0, 3),
+      query,
+      reason: `JD에서 추출된 요구 신호(${pack.slice(0, 3).join(", ")})를 기준으로 탐색 우선순위를 정했습니다.`
     };
-  })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map(({ seed, matched }) => ({
-      companyName: seed.companyName,
-      jobTitle: seed.jobTitle,
-      keywords: matched.slice(0, 3),
-      link: seed.link,
-      reason: `입력 공고와 ${matched.slice(0, 3).join(", ")} 키워드가 겹칩니다.`,
-    }));
+  });
 }

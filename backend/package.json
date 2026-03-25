@@ -5,6 +5,7 @@
   "description": "NestJS backend for AI job-application workflow MVP",
   "scripts": {
     "start": "node dist/main.js",
+    "dev": "nest start --watch",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "lint": "tsc --noEmit",

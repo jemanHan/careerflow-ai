@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { RequestRateLimiterService } from "../../common/request-rate-limiter.service";
 import { WORKFLOW_STAGE } from "../../common/workflow-stage.constants";
 import { WorkflowExecutionLockService } from "../../common/workflow-execution-lock.service";
-import { computeFitAnalysisSnapshot, type FitAnalysisSnapshot } from "../../common/fit-analysis.util";
+import { computeFitAnalysisSnapshot } from "../../common/fit-analysis.util";
 import { LangchainWorkflowService } from "../langchain/langchain-workflow.service";
 import { CandidateProfile, GapAnalysis, JobPostingProfile } from "../langchain/workflow.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -90,8 +90,7 @@ export class FollowupQuestionsService {
       }
     });
 
-    const previousFit = app.fitAnalysisJson as FitAnalysisSnapshot | null | undefined;
-    const fitAnalysis = computeFitAnalysisSnapshot(newGap as GapAnalysis, updated, previousFit ?? null);
+    const fitAnalysis = computeFitAnalysisSnapshot(newGap as GapAnalysis, updated, job);
 
     return this.prisma.application.update({
       where: { id: applicationId },

@@ -95,7 +95,9 @@ export default function MyCareerFlowPage() {
           <p className="text-sm text-slate-500">저장된 워크플로우가 없습니다.</p>
         ) : null}
         {items.map((item) => {
-          const score = typeof item.fitAnalysisJson?.estimatedFitScore === "number" ? item.fitAnalysisJson.estimatedFitScore : null;
+          const fit = item.fitAnalysisJson as { computedAt?: string; estimatedFitScore?: number } | null | undefined;
+          const hasAnalysis =
+            typeof fit?.computedAt === "string" || typeof fit?.estimatedFitScore === "number";
           return (
             <Link
               key={item.id}
@@ -109,7 +111,7 @@ export default function MyCareerFlowPage() {
               <p className="mt-1 text-sm text-slate-700">{summarizeJobPosting(item.targetJobPostingText)}</p>
               <p className="mt-1 text-xs text-slate-500">
                 상태: {item.status}
-                {score !== null ? ` · 적합도 ${score}점` : ""}
+                {hasAnalysis ? " · 장·단점 분석 있음" : ""}
               </p>
             </Link>
           );
