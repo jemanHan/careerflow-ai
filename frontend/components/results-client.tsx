@@ -1498,7 +1498,12 @@ function toReadableDraftText(value?: string): string {
       }
     }
   }
-  return raw.replace(/^\s*(?:-\s*){2,}/gm, "- ").trim();
+  const cleaned = raw
+    .replace(/^\s*(?:-\s*){2,}/gm, "- ")
+    // 혹시라도 모델이 '보완 필요 항목'을 섞어서 나오면 그 이후를 제거한다.
+    .replace(/(\n|^)보완 필요 항목[\s\S]*/g, "$1")
+    .trim();
+  return cleaned;
 }
 
 function toReadableUnknown(input: unknown, depth = 0): string {
