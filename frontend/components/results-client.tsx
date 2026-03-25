@@ -938,6 +938,19 @@ function LiveView({
   const followUpSubmitted = (data?.followUpAnswersJson?.length ?? 0) > 0;
   const interviewStepComplete = hasInterviewResult(data);
 
+  function splitCareerDescriptionSupplement(text: string): { main: string; supplement: string } {
+    const headingRe = /(^|\n)보완 필요 항목\s*:?\s*/m;
+    const start = text.search(headingRe);
+    if (start < 0) return { main: text, supplement: "" };
+    const main = text.slice(0, start).trimEnd();
+    const rest = text.slice(start);
+    const supplement = rest.replace(headingRe, "").trim();
+    return { main, supplement };
+  }
+
+  const careerDraftRaw = toReadableDraftText(data?.generatedDraftJson?.careerDescription);
+  const { main: careerDraftMain, supplement: careerDraftSupplement } = splitCareerDescriptionSupplement(careerDraftRaw);
+
   function handleNoteChange(question: string, note: string) {
     setInterviewNotesByQuestion((prev) => {
       const next = { ...prev, [question]: note };
@@ -1069,11 +1082,16 @@ function LiveView({
             />
             <DocumentBlock
               title="경력기술서 초안"
-              text={toReadableDraftText(data?.generatedDraftJson?.careerDescription)}
+              text={careerDraftMain}
               copyKey="career"
               copiedKey={copiedKey}
               onCopy={handleCopy}
             />
+            {careerDraftSupplement ? (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                보완 필요 항목: {careerDraftSupplement}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -1498,12 +1516,7 @@ function toReadableDraftText(value?: string): string {
       }
     }
   }
-  const cleaned = raw
-    .replace(/^\s*(?:-\s*){2,}/gm, "- ")
-    // 혹시라도 모델이 '보완 필요 항목'을 섞어서 나오면 그 이후를 제거한다.
-    .replace(/(\n|^)보완 필요 항목[\s\S]*/g, "$1")
-    .trim();
-  return cleaned;
+  return raw.replace(/^\s*(?:-\s*){2,}/gm, "- ").trim();
 }
 
 function toReadableUnknown(input: unknown, depth = 0): string {
