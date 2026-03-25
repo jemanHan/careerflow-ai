@@ -6,6 +6,12 @@ import { z } from "zod";
 import { CandidateProfile, GeneratedDraft, JobPostingProfile } from "../workflow.types";
 
 function normalizeDraftText(value: unknown): string {
+  function cleanupLines(lines: string[]): string[] {
+    return lines
+      .map((line) => line.replace(/^\s*(?:-\s*){2,}/, "- ").replace(/\s+$/g, ""))
+      .filter((line, idx, arr) => !(line.trim() === "" && arr[idx - 1]?.trim() === ""));
+  }
+
   function toLines(input: unknown, depth = 0): string[] {
     if (input == null) return [];
     if (typeof input === "string") {
@@ -60,7 +66,7 @@ function normalizeDraftText(value: unknown): string {
     return [String(input)];
   }
 
-  return toLines(value).join("\n").trim();
+  return cleanupLines(toLines(value)).join("\n").trim();
 }
 
 const draftSchema = z.object({
@@ -86,16 +92,19 @@ export async function runDocumentGenerationChain(
       "Treat outputs as draft texts, not final submitted statements.",
       "Use prioritized project context as the first reference for project-related narrative.",
       "Career description quality rules:",
-      "- Keep statements concise and scannable; prefer short natural Korean paragraphs/lists for end users.",
-      "- Prioritize experiences matching target JD requirements first.",
-      "- Include only skills/tech actually used by the candidate (no speculative listing).",
-      "- For each key experience, state role + tech + result/effect when evidence exists.",
-      "- Never invent achievements or tools not grounded in input evidence.",
-      "careerDescription must act like a 'career-description helper' with this structure:",
-      "1) 간단 자기소개(3~4문장)",
-      "2) 공고 요구조건과 겹치는 경험(불릿)",
-      "3) 보완 필요 항목(불릿, 실천 제안 포함)",
-      "Never expose internal structure markers like '[프로젝트 근거 정리]', 'name', 'bullets', JSON keys, or nested '- -' bullet artifacts in final text.",
+      "- Write like a portfolio-ready summary, not a full resume dump.",
+      "- Use only evidence present in candidate/job input. Do not infer unseen companies/metrics/tech.",
+      "- Prioritize shared core elements across roles: 경력(역할/기간), 핵심 활동, 프로젝트 결과.",
+      "- Include only top 3~6 most relevant experiences; avoid exhaustive skill/tool listing.",
+      "- Each bullet should be 1~2 practical sentences (role + action + effect).",
+      "- Remove duplicated bullets and nested bullet artifacts such as '- -'.",
+      "- Do not introduce new domains/buzzwords that are not explicitly present in input (example: 'RAG', 'Agent', '멀티모달', '자율 에이전트').",
+      "- '보완 필요 항목'은 입력에서 확인되는 '근거가 부족한 지점(예: 수치/성과/의사결정 근거의 디테일)'을 정리하는 방식으로만 제안하고, 새로운 기술 도입을 주장하지 마세요.",
+      "careerDescription must follow this section order:",
+      "1) 간단 자기소개 (2~4문장)",
+      "2) 공고 요구조건과 겹치는 경험 (3~6개 불릿)",
+      "3) 보완 필요 항목 (1~3개 불릿, 현실적인 개선 제안)",
+      "Never expose internal structure markers like '[프로젝트 근거 정리]', 'name', 'bullets', JSON keys, or debugging text in final output.",
       "Return strict JSON only.",
       "{format_instructions}",
       "Candidate JSON: {candidate}",

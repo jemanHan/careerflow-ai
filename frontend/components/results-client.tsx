@@ -1067,7 +1067,7 @@ function LiveView({
             />
             <DocumentBlock
               title="경력기술서 초안"
-              text={toReadableDraftText(toReadableDraftText(data?.generatedDraftJson?.careerDescription))}
+              text={toReadableDraftText(data?.generatedDraftJson?.careerDescription)}
               copyKey="career"
               copiedKey={copiedKey}
               onCopy={handleCopy}
@@ -1496,7 +1496,7 @@ function toReadableDraftText(value?: string): string {
       }
     }
   }
-  return raw;
+  return raw.replace(/^\s*(?:-\s*){2,}/gm, "- ").trim();
 }
 
 function toReadableUnknown(input: unknown, depth = 0): string {
@@ -1507,7 +1507,7 @@ function toReadableUnknown(input: unknown, depth = 0): string {
       .map((item) => toReadableUnknown(item, depth + 1))
       .filter((line) => line.length > 0)
       .map((line) => {
-        const normalized = line.replace(/^\s*-\s+/, "").trim();
+        const normalized = line.replace(/^\s*(?:-\s*)+/, "").trim();
         return `- ${normalized}`;
       })
       .join("\n");
