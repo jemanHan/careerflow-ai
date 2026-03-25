@@ -44,9 +44,7 @@ export class GeneratedDocumentsService {
       typeof existingDraft.coverLetter === "string" &&
       existingDraft.coverLetter.trim().length > 0 &&
       typeof existingDraft.careerDescription === "string" &&
-      existingDraft.careerDescription.trim().length > 0 &&
-      typeof existingDraft.projectIntro === "string" &&
-      existingDraft.projectIntro.trim().length > 0;
+      existingDraft.careerDescription.trim().length > 0;
 
     if (!dto.force && hasExistingDocuments) {
       await this.prisma.workflowRun.create({

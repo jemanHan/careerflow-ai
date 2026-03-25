@@ -65,8 +65,7 @@ function normalizeDraftText(value: unknown): string {
 
 const draftSchema = z.object({
   coverLetter: z.unknown().transform(normalizeDraftText),
-  careerDescription: z.unknown().transform(normalizeDraftText),
-  projectIntro: z.unknown().transform(normalizeDraftText)
+  careerDescription: z.unknown().transform(normalizeDraftText)
 });
 
 export async function runDocumentGenerationChain(
@@ -82,10 +81,12 @@ export async function runDocumentGenerationChain(
       "Use only evidence explicitly present in candidate/job/project input.",
       "Do not overclaim unverified experiences (especially RAG, autonomous agent systems, production metrics).",
       "When evidence is weak, use cautious wording like '구현/검증 중', '초기 버전'.",
+      "Tone safety: avoid strong self-evaluative adjectives such as '능숙', '전문가', '탁월'. Prefer safer wording like '활용 경험이 있습니다', '설계·적용 경험이 있습니다', '수행 경험이 있습니다'.",
+      "Do NOT include reflective sections like '배운 점', '회고', '느낀 점' in final drafts. Keep it professional and job-application-ready.",
       "Treat outputs as draft texts, not final submitted statements.",
       "Use prioritized project context as the first reference for project-related narrative.",
       "Career description quality rules:",
-      "- Keep statements concise and scannable; prefer short bullet-oriented phrasing.",
+      "- Keep statements concise and scannable; prefer short natural Korean paragraphs/lists for end users.",
       "- Prioritize experiences matching target JD requirements first.",
       "- Include only skills/tech actually used by the candidate (no speculative listing).",
       "- For each key experience, state role + tech + result/effect when evidence exists.",
@@ -94,7 +95,7 @@ export async function runDocumentGenerationChain(
       "1) 간단 자기소개(3~4문장)",
       "2) 공고 요구조건과 겹치는 경험(불릿)",
       "3) 보완 필요 항목(불릿, 실천 제안 포함)",
-      "projectIntro should provide concise project evidence bullets that can be appended to careerDescription.",
+      "Never expose internal structure markers like '[프로젝트 근거 정리]', 'name', 'bullets', JSON keys, or nested '- -' bullet artifacts in final text.",
       "Return strict JSON only.",
       "{format_instructions}",
       "Candidate JSON: {candidate}",
@@ -105,7 +106,7 @@ export async function runDocumentGenerationChain(
   const chain = RunnableSequence.from([prompt, llm, parser]);
   return draftSchema.parse(
     await chain.invoke({
-      format_instructions: "Fields: coverLetter, careerDescription, projectIntro",
+      format_instructions: "Fields: coverLetter, careerDescription",
       candidate: JSON.stringify(candidate),
       job: JSON.stringify(job),
       prioritized_project_context: prioritizedProjectContext ?? "N/A"

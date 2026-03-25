@@ -36,7 +36,6 @@ export type GapAnalysis = {
 export type GeneratedDraft = {
   coverLetter: string;
   careerDescription: string;
-  projectIntro: string;
 };
 
 export type InterviewReportItem = {
@@ -51,5 +50,4 @@ export type InterviewReportItem = {
 export type RewriteDraft = {
   coverLetter: string;
   careerDescription: string;
-  projectIntro: string;
 };

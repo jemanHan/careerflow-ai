@@ -27,13 +27,15 @@ enum WorkflowStage {
 }
 
 model Application {
-  id                  Int               @id @default(autoincrement())
-  testUserId          String?
-  testUser            TestUser?         @relation(fields: [testUserId], references: [id], onDelete: SetNull)
-  status              ApplicationStatus @default(CREATED)
-  resumeText          String
-  portfolioText       String
-  projectDescriptions String[]
+  id                   Int               @id @default(autoincrement())
+  testUserId           String?
+  testUser             TestUser?         @relation(fields: [testUserId], references: [id], onDelete: SetNull)
+  status               ApplicationStatus @default(CREATED)
+  /// 사용자 지정 워크플로우 이름(표시용)
+  title                String?
+  resumeText           String
+  portfolioText        String
+  projectDescriptions  String[]
   targetJobPostingText String
   candidateProfileJson Json?
   jobPostingJson       Json?
@@ -43,23 +45,25 @@ model Application {
   followUpAnswersJson  Json?
   generatedDraftJson   Json?
   rewrittenDraftJson   Json?
-  workflowRuns        WorkflowRun[]
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  /// 면접 대비 리포트 보면서 남긴 사용자 메모(질문별)
+  interviewNotesJson   Json?
+  workflowRuns         WorkflowRun[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   @@index([testUserId, createdAt])
 }
 
 model WorkflowRun {
-  id             Int           @id @default(autoincrement())
-  applicationId  Int
-  stage          WorkflowStage
-  inputJson      Json?
-  outputJson     Json?
-  errorMessage   String?
-  createdAt      DateTime      @default(now())
+  id            Int           @id @default(autoincrement())
+  applicationId Int
+  stage         WorkflowStage
+  inputJson     Json?
+  outputJson    Json?
+  errorMessage  String?
+  createdAt     DateTime      @default(now())
 
-  application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([applicationId, stage])
 }

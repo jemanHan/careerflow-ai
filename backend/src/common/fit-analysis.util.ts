@@ -1,10 +1,14 @@
 import { CandidateProfile, GapAnalysis, JobPostingProfile } from "../modules/langchain/workflow.types";
 import {
-  buildThemedImprovementPoints,
+  buildUserFacingRecommendations,
+  formatWeakSignalForUserMissingHighlight,
+  isHangulDominantForUi,
+  isMetaStrengthOrAnalysisLine,
+  isUserFacingMissingMetaLine,
   localizeGapAnalysisForDisplay,
   normalizeForStorage,
-  toKoreanStrengthPhrase,
-  toKoreanWeakEvidencePhrase
+  toKoreanRequirementLabel,
+  toKoreanStrengthPhrase
 } from "./signal-display.util";
 
 export type FitAnalysisSnapshot = {
@@ -12,7 +16,10 @@ export type FitAnalysisSnapshot = {
   analysisPanelTitle: string;
   disclaimer: string;
   strengthsHighlight: string[];
+  /** 레거시 필드. 사용자 UI에서는 비노출 — 항상 빈 배열 */
   weakAreas: string[];
+  /** 공고 대비 누락 신호(표시 전용, 진짜 미충족 요건만) */
+  missingSignalsHighlight: string[];
   improvementPoints: string[];
   analysisQuality?: "normal" | "limited";
   qualityReason?: string;
@@ -306,6 +313,7 @@ export function finalizeGapAnalysis(
       level = ratio >= 0.35 ? "partial" : "weak";
     }
 
+    /** explicit_strong만 matched로 — partial은 약한 증거로 두어 부족 신호가 과소 표시되지 않게 함 */
     if (level === "explicit_strong") {
       if (!matched.some((m) => areSemanticallyDuplicate(m, label))) {
         matched.push(label);
@@ -367,20 +375,23 @@ function isPortfolioProjectCodeHeading(value: string): boolean {
   return /^프로젝트\s+[A-Za-z0-9가-힣]{1,4}\s*[.:·\-、]\s*\S/.test(t);
 }
 
-/** LLM이 기술 키워드만 matched에 넣은 경우 한 줄로 묶어 가독성 확보 */
+/** LLM이 기술 키워드만 matched에 넣은 경우 한 줄로 묶어 가독성 확보(한국어 문장 + 라틴 기술명 허용) */
 function buildStrengthPhrasesFromMatched(matchedSignals: string[]): string[] {
   const bare: string[] = [];
   const rich: string[] = [];
   for (const raw of matchedSignals) {
     const n = normalizeSignal(raw);
     if (!n.includes(" ") && BARE_TECH_TOKENS.has(n)) bare.push(raw.trim());
-    else rich.push(toKoreanStrengthPhrase(raw));
+    else {
+      const ph = toKoreanStrengthPhrase(raw, true);
+      if (ph) rich.push(ph);
+    }
   }
   if (bare.length >= 2) {
     const pretty = bare.map((b) => b.replace(/^[a-z]/i, (c) => c.toUpperCase())).join(", ");
-    return [`공고·경력에 근거가 있는 기술 스택: ${pretty}`, ...rich];
+    return [`서류·경력에 근거가 있는 기술 스택(키워드 일치): ${pretty}`, ...rich];
   }
-  return matchedSignals.map((s) => toKoreanStrengthPhrase(s));
+  return matchedSignals.map((s) => toKoreanStrengthPhrase(s, true)).filter((s) => s.length > 0);
 }
 
 /** 서류 한 줄이 공고에서 뽑은 요건·우대·업무 신호와 주제적으로 겹치는지 */
@@ -400,6 +411,79 @@ function alignsWithJobSignals(phrase: string, jobSignals: string[]): boolean {
     if (inter === 1 && ta.size <= 6 && tb.size <= 10) return true;
   }
   return false;
+}
+
+/** 공고 신호와 맞닿는 서류 한 줄이지만, 영어 장문 요약이면 강점 패널에 넣지 않는다. */
+function isEligibleJobAlignedStrengthLine(line: string): boolean {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (t.length === 0) return false;
+  if (isHangulDominantForUi(t, 0.18)) return true;
+  if (t.length <= 36 && !/\s{2,}/.test(t)) return true;
+  return false;
+}
+
+/** LMS·여행·플랫폼·풀스택 등 동일 도메인으로 겹치는 강점 한 줄로 병합. */
+function shouldMergeStrengthPair(a: string, b: string): boolean {
+  if (areSemanticallyDuplicate(a, b)) return true;
+  if (topicBucketOverlap(a, b)) return true;
+  const na = normalizeSignal(a);
+  const nb = normalizeSignal(b);
+  const cluster = ["lms", "여행", "플랫폼", "풀스택", "웹서비스", "웹 서비스", "교육", "학습"];
+  const ca = cluster.filter((k) => na.includes(k));
+  const cb = cluster.filter((k) => nb.includes(k));
+  if (ca.length >= 1 && cb.length >= 1 && ca.some((x) => cb.includes(x))) return true;
+  if (na.includes("lms") && nb.includes("lms")) return true;
+  return false;
+}
+
+function mergeNearDuplicateStrengthHighlights(phrases: string[]): string[] {
+  const sorted = [...phrases].sort((a, b) => b.length - a.length);
+  const out: string[] = [];
+  for (const p of sorted) {
+    const j = out.findIndex((o) => shouldMergeStrengthPair(o, p));
+    if (j >= 0) {
+      if (p.length > out[j].length) out[j] = p;
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+function buildConservativeMissingHighlight(
+  missing: string[],
+  weak: string[],
+  jobSignals: string[],
+  candidate: CandidateProfile | null | undefined,
+  rawSourceText: string | undefined,
+  strengthHints: string[]
+): string[] {
+  const corpus = buildCandidateCorpus(candidate, rawSourceText);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (label: string) => {
+    if (isUserFacingMissingMetaLine(label)) return;
+    const k = semanticKey(label);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(label);
+  };
+  for (const m of missing) add(m);
+  for (const w of weak) {
+    if (out.length >= 3) break;
+    const formatted = formatWeakSignalForUserMissingHighlight(w, strengthHints);
+    if (formatted) add(formatted);
+  }
+  if (out.length < 3 && jobSignals.length > 0) {
+    for (const js of jobSignals) {
+      if (out.length >= 3) break;
+      const level = classifyEvidence(js, corpus);
+      if (level === "missing" || level === "weak") {
+        add(toKoreanRequirementLabel(js));
+      }
+    }
+  }
+  return dedupePhrases(out, 10).slice(0, 10);
 }
 
 /**
@@ -436,7 +520,7 @@ export function computeFitAnalysisSnapshot(
     .filter(isMeaningfulSignal)
     .filter((v, i, arr) => arr.findIndex((x) => semanticKey(x) === semanticKey(v)) === i);
 
-  const corpus = buildCandidateCorpus(candidate);
+  const corpus = buildCandidateCorpus(candidate, rawSourceText);
 
   let workingGap: GapAnalysis = {
     matchedSignals: [...(gap.matchedSignals ?? [])],
@@ -489,33 +573,54 @@ export function computeFitAnalysisSnapshot(
     for (const line of concreteLines) {
       if (isPortfolioProjectCodeHeading(line)) continue;
       if (!alignsWithJobSignals(line, jobSignals)) continue;
-      jobAlignedExtras.push(toKoreanStrengthPhrase(line));
+      if (!isEligibleJobAlignedStrengthLine(line)) continue;
+      const phLine = toKoreanStrengthPhrase(line, true);
+      if (phLine) jobAlignedExtras.push(phLine);
     }
     for (const sig of dedupePhrases(candidateSignals, 14)) {
       if (isPortfolioProjectCodeHeading(sig)) continue;
       if (!alignsWithJobSignals(sig, jobSignals)) continue;
-      jobAlignedExtras.push(toKoreanStrengthPhrase(sig));
+      if (!isEligibleJobAlignedStrengthLine(sig)) continue;
+      const phSig = toKoreanStrengthPhrase(sig, true);
+      if (phSig) jobAlignedExtras.push(phSig);
     }
   }
 
-  const strengthsHighlight = dedupePhrases([...fromMatched, ...jobAlignedExtras], 14).slice(0, 8);
+  const strengthHintsForGap = mergeNearDuplicateStrengthHighlights(
+    dedupePhrases([...fromMatched, ...jobAlignedExtras], 14)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !isMetaStrengthOrAnalysisLine(s))
+  );
+  const strengthsHighlight = strengthHintsForGap.slice(0, 6);
 
   const weakDeduped = dedupePhrases(weakSignals, 12);
   const weakAreasFiltered = weakDeduped.filter(
     (w) => !strengthsHighlight.some((s) => signalsContradictStrengthAndWeak(s, w))
   );
 
-  const weakAreas =
-    weakAreasFiltered.length > 0 ? weakAreasFiltered.slice(0, 10) : ["특이 사항 없음"];
+  const missingSignalsHighlight = buildConservativeMissingHighlight(
+    missingSignals,
+    weakDeduped,
+    jobSignals,
+    candidate,
+    rawSourceText,
+    strengthHintsForGap
+  );
 
-  const improvementPoints = buildThemedImprovementPoints(missingSignals, weakAreasFiltered, 4);
+  const improvementPoints = buildUserFacingRecommendations(
+    missingSignals,
+    weakAreasFiltered,
+    strengthsHighlight,
+    5
+  );
 
   return {
     analysisPanelTitle: "공고 대상 장·단점 분석",
     disclaimer:
       "입력 서류와 채용공고를 비교한 참고 요약이며, 실제 서류·면접 평가나 채용 결과를 보장하지 않습니다.",
     strengthsHighlight,
-    weakAreas,
+    weakAreas: [],
+    missingSignalsHighlight,
     improvementPoints,
     computedAt: new Date().toISOString()
   };

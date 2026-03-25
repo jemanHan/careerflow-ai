@@ -64,8 +64,7 @@ function normalizeDraftText(value: unknown): string {
 
 const rewriteSchema = z.object({
   coverLetter: z.unknown().transform(normalizeDraftText),
-  careerDescription: z.unknown().transform(normalizeDraftText),
-  projectIntro: z.unknown().transform(normalizeDraftText)
+  careerDescription: z.unknown().transform(normalizeDraftText)
 });
 
 export async function runRewriteTailoringChain(
@@ -94,7 +93,7 @@ export async function runRewriteTailoringChain(
   const chain = RunnableSequence.from([prompt, llm, parser]);
   return rewriteSchema.parse(
     await chain.invoke({
-      format_instructions: "Fields: coverLetter, careerDescription, projectIntro",
+      format_instructions: "Fields: coverLetter, careerDescription",
       draft: JSON.stringify(draft),
       job: JSON.stringify(job),
       prioritized_project_context: prioritizedProjectContext ?? "N/A"

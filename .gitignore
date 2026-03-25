@@ -7,6 +7,10 @@ dist/
 *.tsbuildinfo
 *.zip
 reference-main-snapshot/
+_figma_ref_new/
+_figma_ref_results_dashboard/
+_figma_ref_results*/
+.figma-ref-results/
 scripts/
 
 # 로컬 전용 문서(포폴·개발일지·에디터 규칙·개인 환경) — 원격 저장소에 포함하지 않음

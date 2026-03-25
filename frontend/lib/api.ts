@@ -71,6 +71,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export type CreateSourcePayload = {
+  title?: string;
   resumeText: string;
   portfolioText: string;
   projectDescriptions: string[];
@@ -135,6 +136,18 @@ export async function updateApplicationSources(applicationId: number, payload: U
   });
 }
 
+export type UpdateWorkflowMetaPayload = {
+  title?: string;
+  interviewNotesJson?: Record<string, string>;
+};
+
+export async function updateWorkflowMeta(applicationId: number, payload: UpdateWorkflowMetaPayload) {
+  return request(`/source-documents/${applicationId}/meta`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function createTestUser() {
   return request<{ id: string }>("/source-documents/test-user", {
     method: "POST"
@@ -143,11 +156,16 @@ export async function createTestUser() {
 
 export type SavedWorkflowItem = {
   id: number;
+  title?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
   targetJobPostingText: string;
   fitAnalysisJson?: { computedAt?: string; estimatedFitScore?: number } | null;
+  /** 문서 초안(자소서·경력·프로젝트 중 하나라도 생성됨) */
+  hasDocumentDraft?: boolean;
+  /** 면접 대비 리포트 또는 예상 질문 목록이 있음 → 결과 보기 구간으로 분류 */
+  hasInterviewPrep?: boolean;
 };
 
 export async function listMyWorkflows(testUserId: string) {
@@ -157,4 +175,10 @@ export async function listMyWorkflows(testUserId: string) {
       headers: withTestUserHeader()
     }
   );
+}
+
+export async function linkMyWorkflow(applicationId: number) {
+  return request(`/source-documents/${applicationId}/link-my-workflow`, {
+    method: "POST"
+  });
 }

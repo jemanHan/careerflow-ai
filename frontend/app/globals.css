@@ -4,7 +4,8 @@
 
 body {
   font-family: "Pretendard", "Noto Sans KR", "Nanum Gothic", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  @apply bg-slate-100 text-slate-900 antialiased;
+  /* 레퍼런스처럼 밝고 시원한 배경 톤 */
+  @apply bg-slate-50 text-slate-900 antialiased;
 }
 
 main {

@@ -10,6 +10,7 @@ import { runDocumentGenerationChain } from "./chains/document-generation.chain";
 import { runFollowUpQuestionsChain } from "./chains/follow-up-questions.chain";
 import { runGapDetectionChain } from "./chains/gap-detection.chain";
 import { runInterviewQuestionsChain } from "./chains/interview-questions.chain";
+import { toInterviewDisplayLabelKo } from "./interview-display-label-ko.util";
 import { runJobPostingChain } from "./chains/job-posting.chain";
 import { runRewriteTailoringChain } from "./chains/rewrite-tailoring.chain";
 import {
@@ -326,7 +327,7 @@ function buildFallbackInterviewReport(
   job: JobPostingProfile,
   gap?: GapAnalysis
 ): InterviewReportItem[] {
-  const signals = pickTopSignals(job, gap, 3);
+  const signals = pickTopSignals(job, gap, 3).map((s) => toInterviewDisplayLabelKo(s) || s);
   const s1 = signals[0] ?? "핵심 요구사항";
   const s2 = signals[1] ?? "협업/실행 경험";
   const s3 = signals[2] ?? "성과 근거";
@@ -798,8 +799,7 @@ export class LangchainWorkflowService {
       });
       return {
         coverLetter: `지원 동기와 직무 정합성을 강조한 초안\n${JSON.stringify(candidate)}`,
-        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`,
-        projectIntro: `프로젝트 소개 초안\n${JSON.stringify(candidate)}`
+        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`
       };
     }
     try {
@@ -817,8 +817,7 @@ export class LangchainWorkflowService {
       });
       return {
         coverLetter: `지원 동기와 직무 정합성을 강조한 초안\n${JSON.stringify(candidate)}`,
-        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`,
-        projectIntro: `프로젝트 소개 초안\n${JSON.stringify(candidate)}`
+        careerDescription: `경력 기술 초안\n${JSON.stringify(candidate)}`
       };
     }
   }
@@ -873,8 +872,7 @@ export class LangchainWorkflowService {
       });
       return {
         coverLetter: `${draft.coverLetter}\n\n[JD 맞춤 리라이트 적용]`,
-        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`,
-        projectIntro: `${draft.projectIntro}\n\n[JD 맞춤 리라이트 적용]`
+        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`
       };
     }
     try {
@@ -892,8 +890,7 @@ export class LangchainWorkflowService {
       });
       return {
         coverLetter: `${draft.coverLetter}\n\n[JD 맞춤 리라이트 적용]`,
-        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`,
-        projectIntro: `${draft.projectIntro}\n\n[JD 맞춤 리라이트 적용]`
+        careerDescription: `${draft.careerDescription}\n\n[JD 맞춤 리라이트 적용]`
       };
     }
   }

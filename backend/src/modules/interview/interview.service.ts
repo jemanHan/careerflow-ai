@@ -37,8 +37,7 @@ export class InterviewService {
     const generated = (app.generatedDraftJson ?? {}) as Record<string, unknown>;
     const hasDocDraft =
       (typeof generated.coverLetter === "string" && generated.coverLetter.trim().length > 0) ||
-      (typeof generated.careerDescription === "string" && generated.careerDescription.trim().length > 0) ||
-      (typeof generated.projectIntro === "string" && generated.projectIntro.trim().length > 0);
+      (typeof generated.careerDescription === "string" && generated.careerDescription.trim().length > 0);
     if (!hasDocDraft) {
       throw new BadRequestException("먼저 문서 생성(2단계)을 완료한 뒤 면접 대비 리포트를 생성해 주세요.");
     }

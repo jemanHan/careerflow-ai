@@ -15,11 +15,17 @@ export type SignalTheme =
 
 const HANGUL = /[가-힣]/g;
 
-function hangulRatio(text: string): number {
+/** UI 노출 문장의 한글 비율(0~1). 영어 요약 누수 판별·필터에 사용. */
+export function hangulRatio(text: string): number {
   const t = text.replace(/\s/g, "");
   if (t.length === 0) return 0;
   const m = t.match(HANGUL);
   return (m?.length ?? 0) / t.length;
+}
+
+/** 짧은 근거 구·특화 포인트 한 줄로 쓸 만큼 한글이 있는지 */
+export function isHangulDominantForUi(text: string, minRatio = 0.22): boolean {
+  return hangulRatio(text) >= minRatio;
 }
 
 /** 공백·개행만 정리. 저장 시 잘림(…) 금지. 과도한 길이만 상한. */
@@ -121,32 +127,95 @@ export function toKoreanRequirementLabel(raw: string): string {
     case "agent_workflow":
       return "에이전트·다단계 AI 워크플로 설계·구현 경험";
     default:
-      return `공고 명시 요건(이력서·포트폴리오와 키워드 대조): ${conciseClause(normalized, 96)}`;
+      return "검증 가능한 경력·프로젝트 근거(수치·링크·산출물)";
   }
 }
 
-/** 강점·맞는 점: 짧은 근거 구문(한 줄). */
-export function toKoreanStrengthPhrase(raw: string): string {
-  const n = normalizeForStorage(raw, 400);
-  if (hangulRatio(n) >= 0.2) {
-    return conciseClause(n, 88);
+/** 사용자 부족 신호에 넣지 말 내부·메타형 문장. */
+export function isUserFacingMissingMetaLine(s: string): boolean {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  return (
+    /키워드\s*일치\s*여부\s*검토|서류·경력\s*키워드\s*일치\s*여부|검토\s*필요\s*\)\s*$/.test(t) ||
+    /^공고에\s*명시된\s*요건\(서류/.test(t)
+  );
+}
+
+/**
+ * weak 신호를 부족 신호 목록에 넣을 때: 강점과 주제가 겹치면 '완전 누락'이 아니라 증빙 보강 문구로 바꾼다.
+ */
+export function formatWeakSignalForUserMissingHighlight(
+  weakLabel: string,
+  strengthHints: string[]
+): string {
+  const base = stripWeakEvidenceSuffix(weakLabel).trim();
+  if (!base) return "";
+  if (labelCoveredByStrengthHints(weakLabel, strengthHints)) {
+    const theme = classifySignalTheme(base);
+    switch (theme) {
+      case "web_portfolio_service":
+        return "검증 가능한 라이브 서비스 링크·배포·담당 범위 명시";
+      case "ai_llm_product":
+        return "제품에 적용한 생성형 AI·LLM 구체 사례(입력–분석–생성 흐름) 증빙 보강";
+      case "rag_retrieval":
+        return "RAG·문서 검색 구현의 직접 증빙(역할·데이터 범위·평가)";
+      case "agent_workflow":
+        return "에이전트·다단계 AI 패턴의 직접 증빙 보강";
+      default:
+        return `${conciseClause(base, 40)} — 구체 사례·증빙 보강 필요`;
+    }
   }
-  const theme = classifySignalTheme(n);
-  const tail = conciseClause(n, 48);
+  return base;
+}
+
+const STRENGTH_PHRASE_MAX = 56;
+
+/** 갭 JSON 로컬라이즈용: 영문 신호는 테마별 한국어 라벨(저장·후속 단계용). */
+function strengthPhraseKoreanOnlyFallbackLegacy(raw: string): string {
+  const theme = classifySignalTheme(raw);
   switch (theme) {
     case "rag_retrieval":
-      return `RAG·검색 파이프라인 관련 근거: ${tail}`;
+      return "문서·데이터 검색·RAG·컨텍스트 설계 관련 경력 근거";
     case "agent_workflow":
-      return `에이전트·워크플로 관련 근거: ${tail}`;
+      return "에이전트·다단계 AI 워크플로 관련 경력 근거";
     case "ai_llm_product":
-      return `LLM·생성형 AI 적용 근거: ${tail}`;
+      return "생성형 AI·LLM 기능 적용 관련 경력 근거";
     case "automation_tooling":
-      return `자동화·도구화 근거: ${tail}`;
+      return "업무 자동화·도구·워크플로 관련 경력 근거";
     case "web_portfolio_service":
-      return `웹·서비스 출시·운영 근거: ${tail}`;
+      return "웹 서비스·배포·운영·실서비스 관련 경력 근거";
     default:
-      return conciseClause(n, 72);
+      return "공고·경력과 연결된 기술·업무 근거(서류·프로젝트 키워드 일치)";
   }
+}
+
+/** 사용자 강점 패널에 넣지 말아야 할 분석·메타형 문장(후보 근거 아님). */
+export function isMetaStrengthOrAnalysisLine(s: string): boolean {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/공고·경력과 연결된 기술·업무 근거|서류·프로젝트 키워드 일치/.test(t)) return true;
+  if (
+    /^(문서·데이터 검색·RAG·컨텍스트 설계|에이전트·다단계 AI 워크플로|생성형 AI·LLM 기능 적용|업무 자동화·도구·워크플로|웹 서비스·배포·운영·실서비스) 관련 경력 근거$/.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  if (/^서류·경력에 근거가 있는 기술 스택\(키워드 일치\):/.test(t)) return false;
+  return false;
+}
+
+/**
+ * 강점·맞는 점: 짧은 근거 구문(한 줄, 한국어 중심).
+ * `groundedOnly`: true면 서류에 한글이 충분할 때만 문구를 쓰고, 아니면 빈 문자열(스냅샷 강점 패널용).
+ */
+export function toKoreanStrengthPhrase(raw: string, groundedOnly = false): string {
+  const n = normalizeForStorage(raw, 400);
+  if (hangulRatio(n) >= 0.35) {
+    return conciseClause(n, STRENGTH_PHRASE_MAX);
+  }
+  if (groundedOnly) return "";
+  return strengthPhraseKoreanOnlyFallbackLegacy(raw);
 }
 
 /** 약한 근거: 본문만 저장. 느낌 설명은 UI 섹션 제목에서 처리한다. */
@@ -236,6 +305,213 @@ export function buildThemedImprovementPoints(missing: string[], weak: string[], 
   if (out.length === 0) {
     out.push(
       "공고 핵심 요구와 본인 경험의 연결을, 역할·사례·결과가 드러나게 한 줄씩 정리해 보세요."
+    );
+  }
+  return out.slice(0, maxTotal);
+}
+
+/** 권장 문구용: 라벨·강점 문장 겹침 판별(도메인 테마 없음). */
+function normalizeForOverlap(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenSetForOverlap(text: string): Set<string> {
+  return new Set(
+    normalizeForOverlap(text)
+      .split(/\s+/)
+      .filter((t) => t.length >= 2)
+  );
+}
+
+/** 신호 라벨이 이미 강점 요약에 충분히 반영된 경우(완전 누락보다는 증빙 보강에 가깝다). */
+export function labelCoveredByStrengthHints(label: string, strengthHints: string[]): boolean {
+  const blob = normalizeForOverlap(strengthHints.join(" "));
+  const raw = stripWeakEvidenceSuffix(label).trim();
+  const norm = normalizeForOverlap(raw);
+  if (!norm || !blob) return false;
+  if (norm.length >= 6 && blob.includes(norm)) return true;
+  if (norm.length >= 10) {
+    const head = norm.slice(0, Math.min(32, norm.length));
+    if (blob.includes(head)) return true;
+  }
+  const lt = tokenSetForOverlap(raw);
+  if (lt.size === 0) return false;
+  let hit = 0;
+  for (const t of lt) {
+    if (blob.includes(t)) hit += 1;
+  }
+  return hit / lt.size >= 0.55;
+}
+
+const MAX_LABEL_IN_SENTENCE = 96;
+
+function truncateLabelForRecommendation(label: string): string {
+  const t = stripWeakEvidenceSuffix(label).trim();
+  if (t.length <= MAX_LABEL_IN_SENTENCE) return t;
+  return normalizeForStorage(t, MAX_LABEL_IN_SENTENCE);
+}
+
+/** weak 라벨이 협업·이해관계자 맥락이 강한지(직군 무관). */
+function isCollaborationHeavySignal(s: string): boolean {
+  return /(협업|이해관계자|크로스|커뮤니케이션|조율|stakeholder|파트너십|클라이언트|고객사|부서\s*간|이해관계|내부\s*합의)/i.test(
+    s
+  );
+}
+
+/** 짧거나 포괄적 표현 위주 → 역할·범위·절차 명확화 권장. */
+function isVagueSignalLabel(s: string): boolean {
+  const t = s.trim();
+  if (t.length > 0 && t.length <= 16) return true;
+  if (/(관련\s*경험|유사\s*경험|기본\s*역량|업무\s*이해)$/.test(t)) return true;
+  if (/등\s*$/.test(t) && t.length < 48) return true;
+  return false;
+}
+
+function hasMeasurableCueInLabel(s: string): boolean {
+  return /(\d+%|\d+\s*%|pp\b|p\.p|KPI\s*\d|지표\s*\d|건수|명\s*이상|억|만\s*원|배\s*이상|달성률|증가율|전환율\s*\d)/.test(
+    s
+  );
+}
+
+/** 성과·목표형인데 수치·지표 언급이 거의 없을 때 측정 보강. */
+function needsMetricOrOutcomeProof(s: string): boolean {
+  const wantsOutcome = /(성과|목표|KPI|매출|전환|성장|ROI|리드|효율|개선|실적|달성|증대|기여도|임팩트)/.test(
+    s
+  );
+  return wantsOutcome && !hasMeasurableCueInLabel(s);
+}
+
+/** 산출물·캠페인 등인데 검증 수단 언급이 적을 때. */
+function needsArtifactOrLinkProof(s: string): boolean {
+  const deliverableIsh = /(디자인|캠페인|콘텐츠|기획안|브랜드|리포트|영상|카피|배너|이벤트|세일즈|자료|시안|원고|크리에이티브)/.test(
+    s
+  );
+  const hasProofCue = /(링크|URL|산출물|샘플|포트폴리오|첨부|공개|게시|캡처|문서화)/.test(s);
+  return deliverableIsh && !hasProofCue;
+}
+
+function isProcessOrDetailHeavySignal(s: string): boolean {
+  return /(프로세스|절차|단계|운영|기획|실험|검증|론칭|A\/B|워크플로|방법론)/.test(s);
+}
+
+function isToolUsageSignal(s: string): boolean {
+  return /(도구|툴|플랫폼|시스템|스택|스위트|툴체인|툴킷)/.test(s);
+}
+
+/**
+ * weak 신호에 대한 단일 권장: 증거 차원(협업 맥락·수치·산출물·절차·도구·깊이)만 사용.
+ * SignalTheme·RAG/에이전트 등 직군 고정 분기 없음.
+ */
+function inferWeakEvidenceDimension(label: string): string {
+  const L = stripWeakEvidenceSuffix(label).trim();
+  if (!L) return "depth";
+  if (isCollaborationHeavySignal(L)) return "collaboration";
+  if (isVagueSignalLabel(L)) return "vague_scope";
+  if (needsMetricOrOutcomeProof(L)) return "metric";
+  if (needsArtifactOrLinkProof(L)) return "artifact";
+  if (isProcessOrDetailHeavySignal(L)) return "process";
+  if (isToolUsageSignal(L)) return "tool";
+  return "depth";
+}
+
+function recommendationForMissingLabel(displayLabel: string): string {
+  const theme = classifySignalTheme(stripWeakEvidenceSuffix(displayLabel));
+  if (theme === "web_portfolio_service") {
+    return "배포된 서비스가 있다면 링크와 담당 범위를 함께 적어 주세요.";
+  }
+  if (theme === "ai_llm_product") {
+    return "LLM 기능은 어떤 입력–분석–생성 흐름으로 구현했는지 단계 중심으로 적어 주세요.";
+  }
+  if (theme === "rag_retrieval") {
+    return "RAG·문서 검색은 데이터 범위·본인 역할·품질 확인 방식을 한 줄로 적어 주세요.";
+  }
+  if (theme === "agent_workflow") {
+    return "에이전트·다단계 흐름은 도구 호출·상태 관리에서 본인이 맡은 부분을 구체적으로 적어 주세요.";
+  }
+  if (/(플로우|ux|ui|사용자|고객\s*경험|체험)/i.test(displayLabel)) {
+    return "사용자 플로우 개선은 실제 전후 변화나 판단 기준을 한 줄로 덧붙여 주세요.";
+  }
+  return `${displayLabel}에 직접 대응하는 경험이 있으면 역할·기간·결과를 한 줄로 적어 보세요. 없다면 공고 요건과의 관계를 분명히 한 인접 경험만 짧게 적어 보세요.`;
+}
+
+function recommendationForWeakLabel(displayLabel: string, dimension: string): string {
+  const theme = classifySignalTheme(stripWeakEvidenceSuffix(displayLabel));
+  if (theme === "web_portfolio_service") {
+    return "배포된 서비스가 있다면 링크와 담당 범위를 함께 적어 주세요.";
+  }
+  if (theme === "ai_llm_product") {
+    return "LLM 기능은 어떤 입력–분석–생성 흐름으로 구현했는지 단계 중심으로 적어 주세요.";
+  }
+  if (theme === "rag_retrieval") {
+    return "RAG·검색 구현은 코퍼스 범위·본인 단계·재현 방법을 한 줄로 보강해 주세요.";
+  }
+  if (theme === "agent_workflow") {
+    return "에이전트·다단계 패턴은 단계 정의·도구·실패 처리 중 본인 역할을 한 줄로 적어 주세요.";
+  }
+  switch (dimension) {
+    case "collaboration":
+      return `${displayLabel}에 대해 협업 상대·의사결정 구조·본인 역할을 구분해 한 줄로 적어 보세요.`;
+    case "vague_scope":
+      return `${displayLabel}의 본인 역할, 기여 범위, 기간·대상 규모를 한 줄로 구체화해 보세요.`;
+    case "metric":
+      return `${displayLabel}에 대해 측정 가능한 결과(지표·전후 변화·목표 대비 성과)를 한 줄로 적어 보세요.`;
+    case "artifact":
+      return `${displayLabel}을(를) 뒷받침할 만한 링크·문서·시안·샘플 등 검증 가능한 산출물을 한 줄로 제시해 보세요.`;
+    case "process":
+      return `${displayLabel}의 진행 방식(절차·검증·의사결정 포인트) 중 본인이 맡은 부분을 한 줄로 적어 보세요.`;
+    case "tool":
+      return `${displayLabel}에서 사용한 도구·채널·환경과 본인이 수행한 작업을 구분해 한 줄로 적어 보세요.`;
+    default:
+      return `${displayLabel}에 대해 맥락·사례·결과 중 아직 드러나지 않은 한 가지를 한 줄만 보강해 보세요.`;
+  }
+}
+
+/**
+ * 사용자 노출용: 부족 신호·내부 weak 신호로 권장 문구만 생성. 약한 근거는 별도 섹션으로 노출하지 않는다.
+ * 직군·도메인 고정 테마(RAG, 에이전트 등)에 의존하지 않고, 라벨 텍스트·범용 증거 차원으로만 문구를 만든다.
+ */
+export function buildUserFacingRecommendations(
+  missing: string[],
+  weakInternal: string[],
+  strengthHints: string[],
+  maxTotal: number
+): string[] {
+  const out: string[] = [];
+  const seenLabelKeys = new Set<string>();
+
+  const pushUnique = (line: string, labelKey: string) => {
+    if (seenLabelKeys.has(labelKey)) return;
+    seenLabelKeys.add(labelKey);
+    out.push(line);
+  };
+
+  for (const m of missing) {
+    if (out.length >= maxTotal) break;
+    const display = truncateLabelForRecommendation(m);
+    if (!display) continue;
+    const key = normalizeForOverlap(display);
+    if (!key) continue;
+    if (labelCoveredByStrengthHints(m, strengthHints)) continue;
+    pushUnique(recommendationForMissingLabel(display), key);
+  }
+
+  for (const w of weakInternal) {
+    if (out.length >= maxTotal) break;
+    const display = truncateLabelForRecommendation(w);
+    if (!display) continue;
+    const key = normalizeForOverlap(display);
+    if (!key) continue;
+    const dimension = inferWeakEvidenceDimension(w);
+    pushUnique(recommendationForWeakLabel(display, dimension), key);
+  }
+
+  if (out.length === 0) {
+    out.push(
+      "강점은 유지한 채, 공고 문장과 직접 맞닿는 링크·수치·단계별 구현 내용을 항목마다 한 줄씩만 더하면 설득력이 올라갑니다."
     );
   }
   return out.slice(0, maxTotal);

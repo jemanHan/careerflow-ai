@@ -52,6 +52,31 @@ function uniqueStrings(values: string[]): string[] {
     .filter((v, i, arr) => arr.indexOf(v) === i);
 }
 
+const HANGUL = /[가-힣]/g;
+
+function hangulRatio(text: string): number {
+  const t = text.replace(/\s/g, "");
+  if (t.length === 0) return 0;
+  const m = t.match(HANGUL);
+  return (m?.length ?? 0) / t.length;
+}
+
+/** UI 특화 포인트: 한 줄·짧게, 한국어 중심(영어 장문 요약 제외) */
+function sanitizeStrengthLine(s: string, maxLen: number): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  if (hangulRatio(t) < 0.12 && t.length > 28) return "";
+  return t.length <= maxLen ? t : t.slice(0, maxLen).replace(/\s+\S*$/, "").trim();
+}
+
+/** 짧은 명사형·근거형으로 다듬기(원문 LLM 요약체 완화) */
+function polishSpecialtyLineKorean(s: string): string {
+  let t = s.replace(/\s+/g, " ").trim();
+  t = t.replace(/\s*(입니다|합니다|함|예요|이에요)\s*$/g, "");
+  t = t.replace(/^[\s\-•·]+/, "");
+  return t.trim();
+}
+
 function enrichStrengths(raw: CandidateProfile): string[] {
   const fromStrengths = raw.strengths ?? [];
   const fromTech = (raw.experiences ?? []).flatMap((exp) => exp.techStack ?? []);
@@ -63,9 +88,26 @@ function enrichStrengths(raw: CandidateProfile): string[] {
   const nonGenericStrengths = fromStrengths.filter((v) => !GENERIC_STRENGTHS.has(v));
   const merged = uniqueStrings([...nonGenericStrengths, ...concreteCandidates]);
 
-  // 강점이 전부 일반론으로 붕괴되는 경우 concrete 신호를 우선 노출
-  if (merged.length > 0) return merged.slice(0, 8);
-  return uniqueStrings(fromStrengths).slice(0, 6);
+  const cap = 6;
+  const maxLine = 52;
+  const pick =
+    merged.length > 0
+      ? merged
+      : uniqueStrings(fromStrengths);
+
+  let lines = pick
+    .map((s) => polishSpecialtyLineKorean(sanitizeStrengthLine(s, maxLine)))
+    .filter((s) => s.length > 0)
+    .slice(0, cap);
+
+  if (lines.length === 0 && pick.length > 0) {
+    lines = pick.slice(0, cap).map((s) => {
+      const t = polishSpecialtyLineKorean(s.replace(/\s+/g, " ").trim());
+      return t.length <= maxLine ? t : t.slice(0, maxLine).replace(/\s+\S*$/, "").trim();
+    });
+  }
+
+  return lines;
 }
 
 export async function runCandidateProfileChain(
@@ -82,6 +124,9 @@ export async function runCandidateProfileChain(
       "Preserve concrete evidence such as tools, technologies, methods, deliverables, and project names.",
       "Do not collapse strengths into generic soft skills only.",
       "If prioritized project context exists, treat it as primary project evidence.",
+      "Natural-language fields (summary, strengths[], experiences.impact, project descriptions/evidence) MUST be written in Korean (한국어).",
+      "Each strengths[] item must be one short phrase (roughly under 52 characters), evidence-style, not a long paragraph.",
+      "Use natural Korean noun-phrase style (명사형·짧은 구), e.g. 'LMS·여행 플랫폼 웹서비스 풀스택 구현', not formal speech endings.",
       "Return strict JSON only.",
       "{format_instructions}",
       "Prioritized project context:",

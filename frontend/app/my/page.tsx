@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Fragment, useEffect, useState } from "react";
 import { ApiError, listMyWorkflows, SavedWorkflowItem } from "../../lib/api";
 import { getStoredTestUserId, storeTestUserId } from "../../lib/test-user";
 
@@ -13,6 +13,74 @@ function summarizeJobPosting(text: string) {
     return normalized;
   }
   return `${normalized.slice(0, 90)}...`;
+}
+
+function WorkflowSections({
+  items,
+  summarizeJobPosting: summarize
+}: {
+  items: SavedWorkflowItem[];
+  summarizeJobPosting: (text: string) => string;
+}) {
+  const inProgress = items.filter((i) => !i.hasInterviewPrep);
+  const completed = items.filter((i) => i.hasInterviewPrep);
+
+  function renderCard(item: SavedWorkflowItem) {
+    const fit = item.fitAnalysisJson as { computedAt?: string; estimatedFitScore?: number } | null | undefined;
+    const hasAnalysis =
+      typeof fit?.computedAt === "string" || typeof fit?.estimatedFitScore === "number";
+    const phase = item.hasInterviewPrep ? "결과 보기" : "진행 중";
+    return (
+      <Link
+        key={item.id}
+        href={`/results/${item.id}`}
+        className="block rounded-lg border border-slate-200 p-4 transition hover:border-blue-300 hover:bg-blue-50"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-900">
+            {item.title?.trim() ? item.title.trim() : `워크플로우 #${item.id}`}
+          </p>
+          <span className="shrink-0 rounded-full bg-slate-200 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+            {phase}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{new Date(item.updatedAt).toLocaleString("ko-KR")}</p>
+        <p className="mt-1 text-sm text-slate-700">{summarize(item.targetJobPostingText)}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          상태: {item.status}
+          {hasAnalysis ? " · 장·단점 분석 있음" : ""}
+          {item.hasDocumentDraft ? " · 문서 초안 있음" : ""}
+        </p>
+      </Link>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <section className="space-y-2">
+        <h2 className="text-base font-semibold text-slate-900">진행 중</h2>
+        <p className="mt-0.5 text-xs text-slate-500">면접 대비 리포트가 아직 없는 워크플로우입니다.</p>
+        <div className="space-y-2">
+          {inProgress.length === 0 ? (
+            <p className="text-sm text-slate-500">목록이 비어 있습니다.</p>
+          ) : (
+            inProgress.map((item) => <Fragment key={item.id}>{renderCard(item)}</Fragment>)
+          )}
+        </div>
+      </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-semibold text-slate-900">결과 보기</h2>
+        <p className="mt-0.5 text-xs text-slate-500">면접 대비 리포트가 생성된 워크플로우입니다.</p>
+        <div className="space-y-2">
+          {completed.length === 0 ? (
+            <p className="text-sm text-slate-500">목록이 비어 있습니다.</p>
+          ) : (
+            completed.map((item) => <Fragment key={item.id}>{renderCard(item)}</Fragment>)
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export default function MyCareerFlowPage() {
@@ -90,33 +158,11 @@ export default function MyCareerFlowPage() {
 
       {errorMessage ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorMessage}</p> : null}
 
-      <div className="space-y-2">
-        {items.length === 0 && !loading ? (
-          <p className="text-sm text-slate-500">저장된 워크플로우가 없습니다.</p>
-        ) : null}
-        {items.map((item) => {
-          const fit = item.fitAnalysisJson as { computedAt?: string; estimatedFitScore?: number } | null | undefined;
-          const hasAnalysis =
-            typeof fit?.computedAt === "string" || typeof fit?.estimatedFitScore === "number";
-          return (
-            <Link
-              key={item.id}
-              href={`/results/${item.id}`}
-              className="block rounded-lg border border-slate-200 p-4 transition hover:border-blue-300 hover:bg-blue-50"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-900">워크플로우 #{item.id}</p>
-                <p className="text-xs text-slate-500">{new Date(item.updatedAt).toLocaleString("ko-KR")}</p>
-              </div>
-              <p className="mt-1 text-sm text-slate-700">{summarizeJobPosting(item.targetJobPostingText)}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                상태: {item.status}
-                {hasAnalysis ? " · 장·단점 분석 있음" : ""}
-              </p>
-            </Link>
-          );
-        })}
-      </div>
+      {items.length > 0 ? (
+        <WorkflowSections items={items} summarizeJobPosting={summarizeJobPosting} />
+      ) : !loading ? (
+        <p className="text-sm text-slate-500">저장된 워크플로우가 없습니다.</p>
+      ) : null}
     </main>
   );
 }

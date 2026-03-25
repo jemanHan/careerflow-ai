@@ -1,6 +1,7 @@
 const STORAGE_KEY = "careerflow-new-workflow-draft-v1";
 
 export type NewWorkflowDraft = {
+  workflowTitle: string;
   resumeText: string;
   portfolioText: string;
   projectText: string;
@@ -17,6 +18,7 @@ export function loadNewWorkflowDraft(): NewWorkflowDraft | null {
     const parsed = JSON.parse(raw) as Partial<NewWorkflowDraft>;
     if (!parsed || typeof parsed !== "object") return null;
     return {
+      workflowTitle: typeof parsed.workflowTitle === "string" ? parsed.workflowTitle : "",
       resumeText: typeof parsed.resumeText === "string" ? parsed.resumeText : "",
       portfolioText: typeof parsed.portfolioText === "string" ? parsed.portfolioText : "",
       projectText: typeof parsed.projectText === "string" ? parsed.projectText : "",
@@ -34,6 +36,7 @@ export function saveNewWorkflowDraft(partial: Partial<NewWorkflowDraft>): void {
   try {
     const prev = loadNewWorkflowDraft();
     const next: NewWorkflowDraft = {
+      workflowTitle: partial.workflowTitle ?? prev?.workflowTitle ?? "",
       resumeText: partial.resumeText ?? prev?.resumeText ?? "",
       portfolioText: partial.portfolioText ?? prev?.portfolioText ?? "",
       projectText: partial.projectText ?? prev?.projectText ?? "",
