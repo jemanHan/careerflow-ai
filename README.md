@@ -1,121 +1,154 @@
 # CareerFlow AI
 
-CareerFlow AI는 취업 준비에서 반복되는 문서 커스터마이징 업무를  
-**분석 -> 보완 -> 생성 -> 면접 준비** 워크플로우로 구조화한 AI 제품 MVP입니다.
+**이력서·포트폴리오·채용공고**를 같은 흐름에서 다루고, **공고 대비 분석 → 대화형 보완 → 문서 초안 → 면접 준비**까지 이어지는 문서 중심 AI 워크플로우 MVP입니다.  
+단발 생성기가 아니라 단계별 실행과 `WorkflowRun` 로그로 **근거와 재현성**을 남기는 것을 목표로 합니다.
 
-단순 one-shot 생성기가 아니라, 입력 근거를 추적 가능한 단계로 분해해  
-실행 로그와 함께 결과 품질을 개선할 수 있도록 설계했습니다.
+---
 
-## 핵심 가치
-- **단계형 오케스트레이션**: 후보자 추출, JD 추출, 갭 탐지, 보완 질문, 문서/면접 리포트를 분리 실행
-- **설명 가능한 분석**: `fitAnalysisJson`에 강점/약점/보완 포인트를 저장(수치 점수 과장 없음)
-- **운영 안정성**: 레이트리밋, 실행 락, 중복 재실행 스킵, fallback 메타데이터 기록
-- **재방문 UX**: 테스트 계정 기반 워크플로우 저장/조회 + 프론트 입력 초안 저장
+## 사용 흐름 (제품 관점)
+
+1. **테스트 ID** (`숫자 3자리`) 발급 또는 로그인 → 상단 프로필에서 현재 ID·최근 ID 확인 가능  
+2. **`/new`** 에서 이력서·포트폴리오·강조 프로젝트(선택)·채용공고 붙여넣기 → 워크플로 이름 저장(선택)  
+3. **분석 시작** → 후보/JD 추출, 갭 분석, 후속 질문 생성 (`POST /v1/analysis/run`)  
+4. **`/results/[id]`** 에서 공고 대비 장·단점 스냅샷 확인 → 보완 질문에 답하면 프로필·갭·스냅샷 갱신  
+5. **문서 초안 생성** → 지원동기/자기소개 초안 + 경력기술서 초안 (**2종**, `POST /v1/generated-documents/generate`)  
+6. **면접 대비 리포트** → 핵심 3 + 심화 2 (`POST /v1/interview/generate`)  
+7. **`/my`** 에서 같은 테스트 ID로 저장된 워크플로 목록 재진입
+
+> 데모용 **비인증** 테스트 계정입니다. 정식 로그인·권한 모델은 범위 밖입니다.
+
+---
+
+## 핵심 기능
+
+| 영역 | 설명 |
+|------|------|
+| 단계형 오케스트레이션 | 후보 추출, JD 추출, 갭 탐지, 보완 질문, 문서/면접 생성을 체인 단위로 분리 |
+| 설명 가능한 분석 | `fitAnalysisJson`에 공고 대비 강점·부족·보완 방향을 요약(수치 점수 과장 없음) |
+| 운영 제어 | 분당 레이트리밋, 동일 `applicationId+stage` 실행 락, 문서/면접 단계별 재생성 스킵(선택) |
+| 문서 생성 실패 시 | LLM 실패 시 **내부 placeholder를 사용자에게 보여주지 않음** → HTTP 503, 기존 유효 초안은 DB 유지 |
+| 분석 재실행 | `POST /analysis/run` 호출마다 **전체 분석 파이프라인 실행** (`force`는 API 호환용으로만 유지) |
+
+---
 
 ## Tech Stack
-- **Frontend**: Next.js + TypeScript + Tailwind CSS
-- **Backend**: NestJS + TypeScript
-- **Database**: PostgreSQL + Prisma
-- **AI**: LangChain + Gemini Developer API(default) / OpenAI(optional)
 
-## 제품 흐름
-1. `/new`에서 이력서/포트폴리오/강조 프로젝트(선택)/채용공고 입력
-2. `PARSE_SOURCE -> EXTRACT_CANDIDATE -> EXTRACT_JOB -> DETECT_GAP`
-3. `fitAnalysisJson` 생성(공고 대비 강점/약점/보완 요약)
-4. `GENERATE_FOLLOW_UP`으로 보완 질문 제시, 답변 제출 시 `REGENERATE_CANDIDATE` + 갭 재분석
-5. `GENERATE_DRAFTS`로 문서 2종 생성(자기소개 초안/경력기술서 초안), 선택적으로 `REWRITE_FOR_JOB`
-6. `GENERATE_INTERVIEW`로 면접 대비 리포트(핵심 3 + 심화 2) 생성
+- **Frontend**: Next.js (App Router) · TypeScript · Tailwind CSS  
+- **Backend**: NestJS · TypeScript  
+- **Database**: PostgreSQL · Prisma  
+- **AI**: LangChain · Gemini Developer API(기본) / OpenAI(선택)
 
-## 아키텍처 하이라이트
-- **단일 워크플로우 경로**: `LangchainWorkflowService` 중심으로 단계 실행/예외 처리 일원화
-- **단계별 모델 라우팅**:
-  - `light`: 추출/갭/후속/면접
-  - `quality`: 문서 생성/리라이트
-  - `premium`(선택, `GEMINI_PREMIUM_MODEL`): **공고 대비 분석 4단계**(후보·JD·갭·후속질문) — `analysis/run`마다 적용(미설정 시 해당 경로 비활성)
-- **증거 기반 로그**: `WorkflowRun`에 `stage`, `inputJson`, `outputJson`, `errorMessage`, `llmRoute`, `llmExecution` 기록
-- **단계 독립성 보장**: 문서 생성 시 면접 리포트를 덮어쓰지 않도록 병합 저장
+---
 
-## 데모 저장 흐름 (비인증)
-- 테스트 ID(숫자 3자리) 발급 후 워크플로우를 계정별로 저장/조회
-- `/my`에서 본인 테스트 ID의 결과 목록 재진입 가능
-- 입력 폼 초안은 브라우저 스토리지에 자동 저장되어 뒤로가기/재방문 복구 지원
-- 주의: 데모 편의 기능이며 프로덕션 인증/권한 모델 대체가 아님
+## 로컬 실행
 
-## 빠른 실행
+### Backend
 
-### 1) Backend
 ```bash
 cd backend
 npm install
 cp .env.example .env
+# .env 에 DATABASE_URL, LLM 키 등 설정
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma migrate dev
 npm run start:dev
+# 기본 포트 4000, API prefix /v1
 ```
 
-### 2) Frontend
+### Frontend
+
 ```bash
 cd frontend
 npm install
 cp .env.local.example .env.local
+# NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
 npm run dev
+# 기본 포트 3000
 ```
 
-## 환경변수 핵심
-- `LLM_PROVIDER`: `gemini`(기본) | `openai`
-- `GEMINI_API_KEY`
-- `GEMINI_DEFAULT_MODEL` (light)
-- `GEMINI_HIGH_QUALITY_MODEL` (quality)
-- `GEMINI_PREMIUM_MODEL` (선택): 공고 대비 분석 4단계에 사용(매 `analysis/run`). 비우면 premium 경로 비활성 → 해당 단계는 light·문서/면접은 quality
-- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_HIGH_QUALITY_MODEL`
-- `NEXT_PUBLIC_API_BASE_URL` (프론트 배포 시 필수)
+---
 
-## 배포 전 꼭 체크할 것
+## 환경 변수 요약
 
-### 1) Frontend env
-- **로컬**: `frontend/.env.local.example` 기준으로 `NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1`
-- **Vercel(HTTPS → EC2 HTTP)**: 브라우저 Mixed Content 방지를 위해 `frontend/next.config.ts`의 rewrite 사용
-  - `BACKEND_URL=http://<EC2공인IP>:4000`
-  - `NEXT_PUBLIC_API_BASE_URL=/v1`
-- production 빌드 시 `NEXT_PUBLIC_API_BASE_URL`이 없으면(`resolveApiBase`) 에러가 납니다.
+| 구분 | 변수 | 의미 |
+|------|------|------|
+| LLM | `LLM_PROVIDER` | `gemini` (기본) 또는 `openai` |
+| LLM | `GEMINI_API_KEY` / `OPENAI_API_KEY` | 필수 |
+| LLM | `GEMINI_DEFAULT_MODEL` | light(추출·갭·후속 등, 리라이트 보조) |
+| LLM | `GEMINI_HIGH_QUALITY_MODEL` | quality(문서 생성·면접 리포트) |
+| LLM | `GEMINI_PREMIUM_MODEL` | (선택) 공고 대비 분석 4단계에 premium 라우트 |
+| Backend | `DATABASE_URL` | PostgreSQL 연결 문자열 |
+| Backend | `CORS_ORIGIN` | 프론트 Origin (콤마 구분). **production에서 비우면 브라우저 CORS 비활성** |
+| Backend | `PORT` | 기본 4000 |
+| Frontend | `NEXT_PUBLIC_API_BASE_URL` | 예: `http://localhost:4000/v1` — **production 빌드 시 필수** |
 
-### 2) Backend env
-- `backend/.env.example` 기준으로 최소 확인
-  - **DB 연결**: `DATABASE_URL`
-  - **LLM 키**: `GEMINI_API_KEY` 또는 `OPENAI_API_KEY` (+ `LLM_PROVIDER`)
-  - **CORS/포트**: `CORS_ORIGIN`, `PORT`
-- 배포 시 코드에 `localhost`를 박아두지 않고, **`CORS_ORIGIN`에 프론트 도메인**, **`NEXT_PUBLIC_API_BASE_URL`에 백엔드 공개 URL**을 넣습니다. (`NODE_ENV=production`이고 `CORS_ORIGIN`이 비면 프론트 브라우저 요청은 CORS로 막힙니다.)
+상세는 `backend/.env.example`, `frontend/.env.local.example` 참고.
 
-### 3) README 최소 구성(배포 전)
-- **프로젝트 한 줄 소개**
-- **실행 방법**
-- **주요 기능 4~5개**
+---
 
-## API 엔드포인트 (MVP)
-- `POST /v1/source-documents/test-user`
-- `POST /v1/source-documents`
-- `GET /v1/source-documents/by-test-user/:testUserId`
-- `GET /v1/source-documents/:id`
-- `POST /v1/analysis/run`
-- `POST /v1/followup-questions/submit`
-- `POST /v1/generated-documents/generate`
-- `POST /v1/interview/generate`
+## 배포 (요약)
 
-## 운영/안정성 포인트
-- **Rate limit**: 라우트별 분당 호출 제한(429)
-- **Execution lock**: 동일 `applicationId + stage` 동시 실행 차단(409)
-- **Skip strategy**: 기존 결과 재사용으로 비용/지연 최소화
-- **Fallback**: 외부 모델 오류 시 원인 기록 후 흐름 지속
+### Frontend — Vercel
 
-## 문서
-- `docs/project-overview.md` — 제품 목표/범위
-- `docs/architecture.md` — 시스템 설계/워크플로우/라우팅
-- `docs/api-spec.md` — 요청/응답 계약
-- `docs/db-schema.md` — 저장 모델
-- `docs/troubleshooting.md` — 장애 사례/원인/조치
-- `docs/langchain-in-this-project.md` — LangChain 적용 범위와 비범위
+- Root Directory: `frontend`  
+- **HTTPS 프론트 → HTTP EC2 API** 시 브라우저 Mixed Content 방지:  
+  - Vercel 환경변수 `BACKEND_URL=http://<EC2공인IP>:4000`  
+  - `NEXT_PUBLIC_API_BASE_URL=/v1`  
+  - `frontend/next.config.ts`의 `rewrites`가 `/v1/*` → 백엔드로 프록시  
 
-## Repository Hygiene
-- 커밋 금지: `.env`, `.env.local`, 실제 API 키/DB 접속 정보
-- 커밋 금지: `node_modules/`, `dist/`, `.next/`, 실행 로그
-- 커밋 금지: 개인 포트폴리오/개발일지 등 로컬 전용 문서(`.gitignore` 적용)
+### Backend — EC2
+
+- 저장소를 서버에서 `git pull` 후 **`backend` 디렉터리에서 Linux 빌드** (Windows에서 빌드한 `dist`만 올리는 방식은 비권장)  
+- `backend/ecosystem.config.cjs` + PM2  
+- 배포 스크립트: `backend/deploy-ec2.sh` (`npm ci` → `prisma generate` → `migrate deploy` → `npm run build` → PM2)
+
+### 배포 전 체크리스트
+
+1. **Backend**: `DATABASE_URL`, `CORS_ORIGIN`(Vercel 도메인 포함), LLM 키, `NODE_ENV=production`  
+2. **Frontend**: `NEXT_PUBLIC_API_BASE_URL` — 로컬은 직접 URL, Vercel+프록시는 `/v1`  
+3. **보안 그룹**: EC2에서 API 포트(예: 4000) 인바운드 허용 또는 리버스 프록시 뒤에 두기  
+
+---
+
+## 테스트 계정·API 헤더
+
+- 테스트 ID는 **`x-test-user-id`** 헤더(프론트는 `localStorage`와 동기화)와 함께 동작합니다.  
+- `GET /v1/source-documents/by-test-user/:testUserId` 는 **헤더의 ID와 URL의 `testUserId`가 같아야** 합니다.  
+- 워크플로 제목 등 메타: `PATCH /v1/source-documents/:id/meta`  
+
+---
+
+## API·DB 문서
+
+| 문서 | 내용 |
+|------|------|
+| [docs/project-overview.md](docs/project-overview.md) | 문제 정의, MVP 범위, 산출물 원칙 |
+| [docs/architecture.md](docs/architecture.md) | 모듈 구조, 워크플로 단계, 라우팅, 영속화 |
+| [docs/api-spec.md](docs/api-spec.md) | REST 계약, 요청/응답 필드 |
+| [docs/db-schema.md](docs/db-schema.md) | Prisma 엔티티 요약 |
+| [docs/langchain-in-this-project.md](docs/langchain-in-this-project.md) | LangChain 역할·비범위(RAG/에이전트) |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 빠른 참조 + 이슈 이력 |
+
+---
+
+## Repository hygiene
+
+- 커밋 금지: `.env`, `.env.local`, 실제 키·DB 접속 정보, `*.pem`  
+- 커밋 금지: `node_modules/`, `dist/`, `.next/`, 실행 로그, 대용량 zip  
+
+---
+
+## API 엔드포인트 (MVP 요약)
+
+- `POST /v1/source-documents/test-user` — 테스트 ID 발급  
+- `POST /v1/source-documents` — 입력 저장·Application 생성  
+- `GET /v1/source-documents/by-test-user/:testUserId` — 목록 (`x-test-user-id` 필요)  
+- `GET /v1/source-documents/:id` — 상세 + `workflowRuns`  
+- `PATCH /v1/source-documents/:id` / `PATCH /v1/source-documents/:id/meta` — 원문·메타 수정  
+- `POST /v1/source-documents/:id/link-my-workflow` — 활성 테스트 ID에 워크플로 연결  
+- `POST /v1/analysis/run` — 분석 실행  
+- `POST /v1/followup-questions/submit` — 보완 답변 반영  
+- `POST /v1/generated-documents/generate` — 문서 초안 생성  
+- `POST /v1/interview/generate` — 면접 리포트 생성  
+
+전체는 [docs/api-spec.md](docs/api-spec.md) 참고.

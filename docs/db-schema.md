@@ -1,61 +1,55 @@
 # DB Schema (MVP)
 
-## 핵심 엔티티
+PostgreSQL + Prisma. 상세는 `backend/prisma/schema.prisma` 가 기준입니다.
 
-### `Application`
-- 목적: 한 번의 지원 워크플로우 단위를 저장
-- 주요 컬럼:
-  - `status`: `CREATED | ANALYZED | FOLLOW_UP_COMPLETED | DOCUMENTS_GENERATED`
-  - 입력 원문: `resumeText`, `portfolioText`, `projectDescriptions`, `targetJobPostingText`
-  - 분석 JSON: `candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`, `fitAnalysisJson`(공고 대비 장·단점·보완 요약 스냅샷)
-  - 보완 JSON: `followUpQuestions`, `followUpAnswersJson`
-  - 생성 JSON: `generatedDraftJson`, `rewrittenDraftJson`
-  - 감사: `createdAt`, `updatedAt`
-  - 관계: `workflowRuns` (1:N)
+---
 
-### `WorkflowRun`
-- 목적: 단계형 AI 실행 증거를 남기는 이벤트 로그
-- 주요 컬럼:
-  - `applicationId` (FK)
-  - `stage`:
-    - `PARSE_SOURCE`
-    - `EXTRACT_CANDIDATE`
-    - `EXTRACT_JOB`
-    - `DETECT_GAP`
-    - `GENERATE_FOLLOW_UP`
-    - `REGENERATE_CANDIDATE`
-    - `GENERATE_DRAFTS`
-    - `GENERATE_INTERVIEW`
-    - `REWRITE_FOR_JOB`
-  - `inputJson`, `outputJson`, `errorMessage`
-  - `createdAt`
+## `TestUser`
 
-## 관계
-- `Application 1 : N WorkflowRun`
-- 인덱스: `(applicationId, stage)` 복합 인덱스
+| 항목 | 설명 |
+|------|------|
+| `id` | 문자열 PK, **숫자 3자리** 데모 계정 ID |
+| `applications` | 연결된 `Application[]` |
 
-## 영속성 전략
-- MVP 속도 우선으로 중간 산출물은 JSON 중심 저장
-- 동시에 단계 로그를 별도 테이블에 남겨 디버깅/포트폴리오 증거 확보
-- 이후 확장 시 문서 버전 테이블, 평가 지표 테이블로 정규화 가능
+---
 
-## 현재 저장 범위 요약
-- 이미 저장되는 데이터:
-  - 입력 원문(이력서/포트폴리오/강조 프로젝트/JD)
-  - 분석 결과(후보자 프로필/JD 구조화/갭 분석)
-  - 후속 질문/후속 답변
-  - 생성 문서/리라이트 문서/면접 질문
-  - 단계별 실행 로그(`WorkflowRun`)
-- 아직 없는 데이터:
-  - 사용자 계정(`User`) 및 인증 정보
-  - 사용자별 소유권(`application.userId`)
-  - 문서 버전 테이블(예: DraftVersion)
-  - 세션/권한 감사 로그
+## `Application`
 
-## 로그인/개인화 확장 관점의 갭
-- 현재 `Application`은 사용자 식별자 없이 독립 저장된다.
-- 향후 개인화 지원을 위해 최소 변경이 필요한 항목:
-  1. `User` 엔티티 추가
-  2. `Application.userId` FK 추가
-  3. 조회 API에 소유권 검증(본인 데이터만 접근)
-  4. 버전/부분 재생성 메타데이터 분리
+한 번의 지원 워크플로 단위.
+
+| 구분 | 필드 |
+|------|------|
+| 식별 | `id`, `testUserId`(선택), `title`(표시용 워크플로 이름) |
+| 상태 | `status`: `CREATED` → `ANALYZED` → `FOLLOW_UP_COMPLETED` → `DOCUMENTS_GENERATED` |
+| 입력 | `resumeText`, `portfolioText`, `projectDescriptions[]`, `targetJobPostingText` |
+| 분석 | `candidateProfileJson`, `jobPostingJson`, `gapAnalysisJson`, `fitAnalysisJson` |
+| 보완 | `followUpQuestions[]`, `followUpAnswersJson` |
+| 생성 | `generatedDraftJson`(문서·면접 산출물), `rewrittenDraftJson`(리라이트) |
+| 기타 | `interviewNotesJson`(질문별 사용자 메모) |
+| 관계 | `workflowRuns` 1:N |
+| 감사 | `createdAt`, `updatedAt` |
+
+인덱스: `(testUserId, createdAt)` — 목록 조회용.
+
+---
+
+## `WorkflowRun`
+
+단계별 AI 실행 로그.
+
+| 필드 | 설명 |
+|------|------|
+| `applicationId` | FK → Application |
+| `stage` | `WorkflowStage` enum (`PARSE_SOURCE` … `REWRITE_FOR_JOB`) |
+| `inputJson`, `outputJson` | 단계 입출력(라우팅·`llmExecution` 포함 가능) |
+| `errorMessage` | 실패·스킵 사유 문자열 |
+
+인덱스: `(applicationId, stage)`.
+
+---
+
+## 설계 메모
+
+- MVP는 속도를 위해 **중간 산출물을 JSON 컬럼**에 저장.  
+- 동시에 `WorkflowRun`으로 단계 증거를 남겨 디버깅·포트폴리오 설명에 활용.  
+- 향후: `User`·`Application.userId`, 문서 버전 테이블 등으로 확장 가능.  
