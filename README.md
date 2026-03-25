@@ -88,7 +88,6 @@ npm run dev
 
 ## Docs
 - `docs/project-overview.md` — 제품 범위·흐름
-- `docs/job-alignment.md` — 요구사항↔구현 매핑(참고)
 - `docs/architecture.md`
 - `docs/api-spec.md`
 - `docs/db-schema.md`
