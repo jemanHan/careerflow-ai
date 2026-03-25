@@ -23,6 +23,14 @@ export default function NewWorkflowPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const hasStoredTestUser = Boolean(testUserId.trim());
 
+  function getTemplateRoleLabel(templateId: string): string {
+    if (templateId === "template-1") return "개발자 예시";
+    if (templateId === "template-2") return "마케팅/CRM 예시";
+    if (templateId === "template-3") return "운영/PMO 예시";
+    if (templateId === "template-4") return "디자이너 예시";
+    return "입력 예시";
+  }
+
   useEffect(() => {
     const stored = getStoredTestUserId();
     const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
@@ -146,13 +154,6 @@ export default function NewWorkflowPage() {
             <h2 className="text-base font-semibold text-slate-900">예시 템플릿</h2>
             <p className="text-sm leading-relaxed text-slate-600">빠르게 기능을 체험해보고 싶다면 클릭하여 예시로 채워보세요.</p>
           </div>
-          <button
-            type="button"
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-            onClick={() => applyTemplate(selectedTemplateId ?? demoTemplates[0]?.id ?? "template-1")}
-          >
-            템플릿 불러오기
-          </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -168,7 +169,10 @@ export default function NewWorkflowPage() {
                   selected ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200 hover:border-blue-300"
                 ].join(" ")}
               >
-                <p className="text-base font-semibold text-slate-900">{template.title}</p>
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  {getTemplateRoleLabel(template.id)}
+                </span>
+                <p className="mt-3 text-base font-semibold text-slate-900">{template.title}</p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">{template.description}</p>
               </button>
             );
@@ -184,45 +188,16 @@ export default function NewWorkflowPage() {
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">저장/표시 옵션</h2>
-            <p className="text-sm leading-relaxed text-slate-600">워크플로우 이름은 목록에서 찾기 쉽게 해줍니다. 테스트 ID를 넣으면 /my에서 저장·조회가 가능합니다.</p>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="block space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <span className="text-sm font-semibold text-slate-900">워크플로우 이름 (선택)</span>
-              <span className="text-xs text-slate-500">/my에서 목록으로 볼 때 표시되는 이름입니다. (예: 2026 상반기 지원 #1)</span>
-              <input
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                placeholder="예: 2026 @@ 기업 상반기 프론트엔드 지원"
-                value={workflowTitle}
-                onChange={(e) => setWorkflowTitle(e.target.value)}
-                maxLength={60}
-              />
-            </label>
-
-            {hasStoredTestUser ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">현재 로그인 정보</p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  연결된 테스트 ID: <span className="font-mono font-semibold text-slate-900">{testUserId.trim()}</span>
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">테스트 ID 변경/발급은 홈에서 할 수 있습니다.</p>
-              </div>
-            ) : (
-              <label className="block space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <span className="text-sm font-semibold text-slate-900">테스트 ID (선택)</span>
-                <span className="text-xs text-slate-500">저장한 결과를 /my에서 다시 보려면 입력하거나(또는 홈에서 발급) 사용하세요.</span>
-                <input
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  placeholder="예: 027"
-                  value={testUserId}
-                  onChange={(e) => setTestUserId(e.target.value)}
-                />
-              </label>
-            )}
-          </div>
+          <label className="block space-y-2">
+            <span className="text-base font-semibold text-slate-900">워크플로우 이름 (선택)</span>
+            <input
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              placeholder="예: 2026 @@ 기업 상반기 프론트엔드 지원"
+              value={workflowTitle}
+              onChange={(e) => setWorkflowTitle(e.target.value)}
+              maxLength={60}
+            />
+          </label>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

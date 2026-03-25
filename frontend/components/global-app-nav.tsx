@@ -2,15 +2,23 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getStoredTestUserId } from "../lib/test-user";
 
 /** 모든 페이지 상단: 뒤로가기 + 주요 이동 */
 export function GlobalAppNav() {
   const router = useRouter();
   const pathname = usePathname();
+  const [testUserId, setTestUserId] = useState("");
+
+  useEffect(() => {
+    setTestUserId(getStoredTestUserId().trim());
+  }, [pathname]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {pathname !== "/" ? (
           <button
             className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
@@ -32,6 +40,28 @@ export function GlobalAppNav() {
             내 워크플로우
           </Link>
         </nav>
+        </div>
+
+        {testUserId ? (
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            aria-label={`현재 테스트 ID ${testUserId}. 홈에서 변경할 수 있습니다.`}
+            title="홈에서 ID 변경/발급"
+          >
+            <span className="text-slate-500">ID</span>
+            <span className="font-mono text-slate-900">{testUserId}</span>
+          </Link>
+        ) : (
+          <Link
+            href="/"
+            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+            aria-label="로그인이 필요합니다. 홈에서 테스트 ID를 설정하세요."
+            title="홈에서 테스트 ID 설정"
+          >
+            로그인 필요
+          </Link>
+        )}
       </div>
     </header>
   );
