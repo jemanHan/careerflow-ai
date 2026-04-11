@@ -16,7 +16,7 @@ export default async function ResultPage({ params }: Props) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-10 px-6 py-8">
+    <main className="mx-auto min-h-screen w-full max-w-screen-2xl space-y-10 bg-surface px-4 py-8 pt-24 md:px-8">
       <ResultsClient applicationId={applicationId} />
     </main>
   );

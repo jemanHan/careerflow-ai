@@ -21,7 +21,6 @@ export default function NewWorkflowPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const hasStoredTestUser = Boolean(testUserId.trim());
 
   function getTemplateRoleLabel(templateId: string): string {
     if (templateId === "template-1") return "개발자 예시";
@@ -36,8 +35,6 @@ export default function NewWorkflowPage() {
     const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const navigationType = nav?.type;
 
-    // /new 첫 진입은 빈 화면이 기본값.
-    // 결과 화면에서 "뒤로가기"로 돌아온 경우(back_forward)만 초안을 복원합니다.
     if (navigationType === "back_forward") {
       const draft = loadNewWorkflowDraft();
       if (draft) {
@@ -87,9 +84,7 @@ export default function NewWorkflowPage() {
 
   function applyTemplate(templateId: string) {
     const template = demoTemplates.find((item) => item.id === templateId);
-    if (!template) {
-      return;
-    }
+    if (!template) return;
     setSelectedTemplateId(templateId);
     setResumeText(template.resumeText);
     setPortfolioText(template.portfolioText);
@@ -134,146 +129,141 @@ export default function NewWorkflowPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
-      <header className="space-y-3 break-keep">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">새 워크플로우 시작</h1>
-        <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
-          붙여넣은 텍스트는 <span className="font-semibold text-slate-900">장·단점 분석</span> →{" "}
-          <span className="font-semibold text-slate-900">대화형 보완</span> →{" "}
-          <span className="font-semibold text-slate-900">문서 생성</span> →{" "}
-          <span className="font-semibold text-slate-900">면접 준비</span>까지 이어지는 흐름에 사용됩니다.
-        </p>
-        <p className="text-xs text-slate-500">
-          `이력서 텍스트`, `포트폴리오 텍스트`, `타겟 채용공고 텍스트`는 각각 최소 20자 이상이 필요합니다. 입력 내용은 이 브라우저에 초안으로 저장됩니다.
-        </p>
-      </header>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">예시 템플릿</h2>
-            <p className="text-sm leading-relaxed text-slate-600">빠르게 기능을 체험해보고 싶다면 클릭하여 예시로 채워보세요.</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {demoTemplates.map((template) => {
-            const selected = selectedTemplateId === template.id;
-            return (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => applyTemplate(template.id)}
-                className={[
-                  "rounded-2xl border bg-white p-5 text-left shadow-sm transition-all",
-                  selected ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200 hover:border-blue-300"
-                ].join(" ")}
-              >
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                  {getTemplateRoleLabel(template.id)}
-                </span>
-                <p className="mt-3 text-base font-semibold text-slate-900">{template.title}</p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{template.description}</p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {errorMessage ? (
-        <pre className="whitespace-pre-wrap rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
-          {errorMessage}
-        </pre>
-      ) : null}
-
-      <form className="space-y-6" onSubmit={handleSubmit}>
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <label className="block space-y-2">
-            <span className="text-base font-semibold text-slate-900">워크플로우 이름 (선택)</span>
-            <input
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              placeholder="예: 2026 @@ 기업 상반기 프론트엔드 지원"
-              value={workflowTitle}
-              onChange={(e) => setWorkflowTitle(e.target.value)}
-              maxLength={60}
-            />
-          </label>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">이력서 텍스트</h2>
-            <p className="text-sm text-slate-600">경력, 역할, 기술, 성과 중심으로 입력해 주세요.</p>
-          </div>
-          <textarea
-            className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-            rows={10}
-            minLength={20}
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            required
-          />
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">포트폴리오 텍스트</h2>
-            <p className="text-sm text-slate-600">프로젝트 설명, 문제 해결, 결과 중심으로 입력해 주세요.</p>
-          </div>
-          <textarea
-            className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-            rows={10}
-            minLength={20}
-            value={portfolioText}
-            onChange={(e) => setPortfolioText(e.target.value)}
-            required
-          />
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">강조 프로젝트 (선택)</h2>
-            <p className="text-sm text-slate-600">이번 지원에서 특히 강조하고 싶은 사례를 적어 주세요.</p>
-          </div>
-          <textarea
-            className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-            rows={7}
-            value={projectText}
-            onChange={(e) => setProjectText(e.target.value)}
-          />
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">입력 시 문서 생성/면접 질문에서 우선 근거로 반영됩니다.</p>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 space-y-1">
-            <h2 className="text-base font-semibold text-slate-900">타겟 채용공고 텍스트</h2>
-            <p className="text-sm text-slate-600">주요업무, 자격요건, 우대사항을 포함해 붙여넣어 주세요.</p>
-          </div>
-          <textarea
-            className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-            rows={10}
-            minLength={20}
-            value={targetJobPostingText}
-            onChange={(e) => setTargetJobPostingText(e.target.value)}
-            required
-          />
-        </section>
-
-        <section className="sticky bottom-4 z-10 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/75">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs leading-relaxed text-slate-500">
-              입력이 완료되면 분석을 시작합니다. 결과 페이지에서 단계별로 진행할 수 있습니다.
+      <main className="min-h-screen bg-surface-container-low px-6 py-10 pt-24 md:px-10 lg:py-12">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-10">
+            <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface md:text-4xl">새 워크플로우</h1>
+            <p className="mt-2 text-lg font-light text-tertiary">붙여넣은 텍스트로 분석 → 보완 → 문서 초안 → 면접 준비까지 이어집니다.</p>
+            <p className="mt-3 text-xs text-on-surface-variant">
+              이력서·포트폴리오·채용공고는 각 최소 20자 이상. 브라우저에 초안으로 저장됩니다.
             </p>
-            <button
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={loading}
-              type="submit"
-            >
-              {loading ? "분석 시작 중..." : "분석 시작하기"}
-            </button>
           </div>
-        </section>
-      </form>
-    </main>
+
+          <section id="workflow-templates" className="mb-12 scroll-mt-24">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="font-headline text-xl font-bold text-on-surface">예시 템플릿</h2>
+              <span className="text-xs font-semibold uppercase tracking-widest text-primary">선택</span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {demoTemplates.map((template) => {
+                const selected = selectedTemplateId === template.id;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => applyTemplate(template.id)}
+                    className={[
+                      "rounded-xl p-6 text-left transition-all duration-300",
+                      "bg-surface-container-lowest shadow-ambient-soft",
+                      selected ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-container-low" : "hover:bg-surface-bright"
+                    ].join(" ")}
+                  >
+                    <span className="inline-flex rounded-full bg-surface-container-high px-2.5 py-1 text-xs font-semibold text-secondary">
+                      {getTemplateRoleLabel(template.id)}
+                    </span>
+                    <p className="mt-3 font-bold text-on-surface">{template.title}</p>
+                    <p className="mt-2 text-sm text-tertiary">{template.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {errorMessage ? (
+            <pre className="mb-8 whitespace-pre-wrap rounded-xl bg-error-container/40 p-4 text-sm text-error">{errorMessage}</pre>
+          ) : null}
+
+          <form className="space-y-10" onSubmit={handleSubmit} id="workflow-input">
+            <section className="space-y-3">
+              <h2 className="font-headline text-xl font-bold text-on-surface">워크플로 이름 (선택)</h2>
+              <div className="ghost-field">
+                <input
+                  className="relative z-10 w-full rounded-xl border-0 bg-transparent px-5 py-3 text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-0"
+                  placeholder="예: 2026 @@ 기업 상반기 프론트엔드 지원"
+                  value={workflowTitle}
+                  onChange={(e) => setWorkflowTitle(e.target.value)}
+                  maxLength={60}
+                />
+                <div className="ghost-field-border" aria-hidden />
+              </div>
+            </section>
+
+            {[
+              {
+                key: "resume",
+                title: "이력서 텍스트",
+                hint: "경력, 역할, 기술, 성과 중심으로 입력해 주세요.",
+                value: resumeText,
+                onChange: setResumeText,
+                required: true,
+                rows: 10,
+                minLength: 20
+              },
+              {
+                key: "portfolio",
+                title: "포트폴리오 텍스트",
+                hint: "프로젝트 설명, 문제 해결, 결과 중심으로 입력해 주세요.",
+                value: portfolioText,
+                onChange: setPortfolioText,
+                required: true,
+                rows: 10,
+                minLength: 20
+              },
+              {
+                key: "project",
+                title: "강조 프로젝트 (선택)",
+                hint: "이번 지원에서 특히 강조하고 싶은 사례.",
+                value: projectText,
+                onChange: setProjectText,
+                required: false,
+                rows: 7
+              },
+              {
+                key: "jd",
+                title: "타겟 채용공고 텍스트",
+                hint: "주요업무, 자격요건, 우대사항을 포함해 붙여넣어 주세요.",
+                value: targetJobPostingText,
+                onChange: setTargetJobPostingText,
+                required: true,
+                rows: 10,
+                minLength: 20
+              }
+            ].map((field) => (
+              <section key={field.key} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-outline text-xl">description</span>
+                  <label className="text-sm font-semibold text-on-surface-variant">{field.title}</label>
+                </div>
+                <p className="text-xs text-tertiary">{field.hint}</p>
+                <div className="ghost-field">
+                  <textarea
+                    className="relative z-10 min-h-[12rem] w-full resize-y rounded-xl border-0 bg-transparent p-6 text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-0"
+                    rows={field.rows}
+                    minLength={field.minLength}
+                    required={field.required}
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value)}
+                  />
+                  <div className="ghost-field-border" aria-hidden />
+                </div>
+              </section>
+            ))}
+
+            <section className="flex flex-col items-center gap-4 pb-16 pt-4">
+              <button
+                type="submit"
+                disabled={loading}
+                className="group inline-flex items-center gap-3 rounded-xl editorial-gradient px-12 py-5 text-lg font-bold text-on-primary shadow-ambient transition hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              >
+                {loading ? "시작 중…" : "분석 시작하기"}
+                <span className="material-symbols-outlined transition-transform group-hover:translate-x-0.5">arrow_forward</span>
+              </button>
+              <p className="max-w-sm text-center text-xs text-tertiary">
+                결과 페이지에서 장·단점 분석, 보완 질문, 문서 초안, 면접 리포트를 순서대로 진행할 수 있습니다.
+              </p>
+            </section>
+          </form>
+        </div>
+      </main>
   );
 }

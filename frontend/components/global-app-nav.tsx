@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { getStoredTestUserId, getStoredTestUserIdHistory, getTestUserChangedEventName, storeTestUserId } from "../lib/test-user";
 
-/** 모든 페이지 상단: 뒤로가기 + 주요 이동 */
 export function GlobalAppNav() {
   const router = useRouter();
   const pathname = usePathname();
@@ -41,11 +40,9 @@ export function GlobalAppNav() {
       if (profileWrapRef.current?.contains(target)) return;
       setOpenProfile(false);
     }
-
     function handleEsc(e: KeyboardEvent) {
       if (e.key === "Escape") setOpenProfile(false);
     }
-
     document.addEventListener("mousedown", handleOutsideClick);
     document.addEventListener("keydown", handleEsc);
     return () => {
@@ -54,44 +51,59 @@ export function GlobalAppNav() {
     };
   }, [openProfile]);
 
+  function navLinkClass(href: string) {
+    const active =
+      href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+    return [
+      "text-sm font-medium transition-colors h-16 flex items-center border-b-2 -mb-px",
+      active
+        ? "border-primary font-semibold text-primary"
+        : "border-transparent text-tertiary hover:text-primary"
+    ].join(" ");
+  }
+
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {pathname !== "/" ? (
-          <button
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            onClick={() => router.back()}
-            type="button"
-          >
-            <span aria-hidden>←</span>
-            뒤로가기
-          </button>
-        ) : null}
-        <nav className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-label="주요 메뉴">
-          <Link className="font-semibold text-slate-900 hover:text-blue-700" href="/">
+    <header className="fixed top-0 left-0 right-0 z-50 glass-header border-b border-outline-variant/10 bg-surface/80">
+      <div className="mx-auto flex h-16 w-full max-w-screen-2xl items-center justify-between gap-4 px-6 md:px-8">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          {pathname !== "/" ? (
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container-low"
+            >
+              <span aria-hidden>←</span>
+              <span className="hidden sm:inline">뒤로</span>
+            </button>
+          ) : null}
+          <Link href="/" className="font-headline text-xl font-bold tracking-tight text-on-surface">
             CareerFlow AI
           </Link>
-          <span className="text-slate-300" aria-hidden>
-            |
-          </span>
-          <Link className="text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline" href="/my">
-            내 워크플로우
-          </Link>
-        </nav>
         </div>
 
-        <div className="relative" ref={profileWrapRef}>
+        <nav className="hidden items-center gap-6 md:flex" aria-label="주요 메뉴">
+          <Link href="/" className={navLinkClass("/")}>
+            홈
+          </Link>
+          <Link href="/new" className={navLinkClass("/new")}>
+            새 워크플로
+          </Link>
+          <Link href="/my" className={navLinkClass("/my")}>
+            나의 CareerFlow
+          </Link>
+        </nav>
+
+        <div className="relative flex shrink-0 items-center gap-3" ref={profileWrapRef}>
           <button
             type="button"
             onClick={() => setOpenProfile((v) => !v)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-surface-container-high shadow-ambient-soft ring-1 ring-outline-variant/20 hover:bg-surface-container"
             aria-haspopup="menu"
             aria-expanded={openProfile}
-            aria-label={testUserId ? "프로필 메뉴 열기" : "로그인 안내 열기"}
+            aria-label={testUserId ? "프로필 메뉴" : "세션 안내"}
           >
             <span
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full editorial-gradient text-xs font-bold text-on-primary"
               aria-hidden
             >
               U
@@ -101,17 +113,17 @@ export function GlobalAppNav() {
           {openProfile ? (
             <div
               role="menu"
-              className="absolute right-0 mt-2 w-[min(280px,92vw)] rounded-2xl border border-slate-200 bg-white p-3 shadow-lg"
+              className="absolute right-0 mt-2 w-[min(300px,92vw)] rounded-2xl bg-surface-container-lowest p-4 shadow-ambient"
             >
-              <p className="px-1 text-xs font-semibold text-slate-500">프로필</p>
-              <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs text-slate-600">현재 테스트 ID</p>
-                <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{testUserId || "미설정"}</p>
+              <p className="px-1 text-xs font-semibold uppercase tracking-wider text-tertiary">세션</p>
+              <div className="mt-2 rounded-xl bg-surface-container-low px-3 py-2">
+                <p className="text-xs text-on-surface-variant">현재 ID</p>
+                <p className="mt-1 font-mono text-sm font-semibold text-on-surface">{testUserId || "미설정"}</p>
               </div>
 
               {history.length > 0 ? (
                 <div className="mt-3">
-                  <p className="px-1 text-xs font-semibold text-slate-500">최근 사용 ID</p>
+                  <p className="px-1 text-xs font-semibold uppercase tracking-wider text-tertiary">최근 ID</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {history.map((id) => (
                       <button
@@ -123,12 +135,12 @@ export function GlobalAppNav() {
                           setOpenProfile(false);
                         }}
                         className={[
-                          "rounded-full border px-3 py-1 text-xs font-semibold shadow-sm",
+                          "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
                           id === testUserId
-                            ? "border-blue-600 bg-blue-50 text-blue-900"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            ? "bg-primary/15 text-primary"
+                            : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
                         ].join(" ")}
-                        aria-label={`테스트 ID ${id}로 전환`}
+                        aria-label={`ID ${id}로 전환`}
                       >
                         {id}
                       </button>
@@ -141,18 +153,18 @@ export function GlobalAppNav() {
                 <Link
                   href="/"
                   role="menuitem"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                  className="rounded-xl bg-surface-container-low px-3 py-2.5 text-sm font-semibold text-on-surface hover:bg-surface-container"
                   onClick={() => setOpenProfile(false)}
                 >
-                  홈에서 ID 변경/발급
+                  홈 · ID 설정
                 </Link>
                 <Link
                   href="/my"
                   role="menuitem"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                  className="rounded-xl bg-surface-container-low px-3 py-2.5 text-sm font-semibold text-on-surface hover:bg-surface-container"
                   onClick={() => setOpenProfile(false)}
                 >
-                  내 워크플로우 보기
+                  나의 CareerFlow
                 </Link>
               </div>
             </div>

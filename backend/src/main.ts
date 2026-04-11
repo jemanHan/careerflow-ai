@@ -11,8 +11,14 @@ async function bootstrap(): Promise<void> {
     ? corsOriginRaw.split(",").map((v) => v.trim()).filter(Boolean)
     : [];
   const isProduction = process.env.NODE_ENV === "production";
+  const devDefaultOrigins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001"
+  ];
   const origin =
-    allowOrigins.length > 0 ? allowOrigins : isProduction ? false : ["http://localhost:3000"];
+    allowOrigins.length > 0 ? allowOrigins : isProduction ? false : devDefaultOrigins;
   if (isProduction && allowOrigins.length === 0) {
     logger.warn(
       "CORS_ORIGIN is not set. Browser CORS is disabled until you set CORS_ORIGIN (comma-separated frontend origins)."
