@@ -1,139 +1,165 @@
 # CareerFlow AI
 
-지원 서류와 채용공고를 **한 흐름**으로 묶어, **공고에 맞는 강·약점 정리 → 근거 보완 → 자기소개·경력기술서 초안 → 면접 준비**까지 이어 주는 **문서 중심 AI 워크플로**입니다.
+이력서, 포트폴리오, 채용공고를 한 흐름으로 연결해  
+`분석 → 보완 질문 → 문서 초안 → 면접 대비`까지 이어 주는 문서 중심 AI 워크플로우 서비스입니다.
 
-한 번에 뽑아 내는 생성기가 아니라, **단계마다 근거를 남기고** 같은 지원 건을 다시 열어 이어 갈 수 있게 만든 것이 핵심입니다.
-
----
-
-## How it works
-
-1. **로그인** — 편의를 위해 가벼운 **데모 세션**으로 시작합니다. 상단 프로필에서 현재 세션과 최근에 쓴 계정을 확인할 수 있습니다.  
-2. **플로우 생성 화면**에서 이력서·포트폴리오·강조 프로젝트(선택)·채용공고를 붙여 넣고, 필요하면 이 작업의 이름만 정리합니다.  
-3. **분석**을 실행하면 입력을 바탕으로 후보 요약, 공고 요구, 갭(부족한 신호), 이어서 받을 **보완 질문**이 준비됩니다.  
-4. **결과 화면**에서 공고 기준으로 정리된 강점·보완 포인트를 보고, 질문에 답하면 프로필과 분석 요약이 다시 맞춰집니다.  
-5. **문서 초안**으로 지원동기·자기소개 초안과 경력기술서 초안 **두 가지**를 받을 수 있습니다.  
-6. **면접 준비**에서는 핵심 질문과 심화 질문, 답변 준비 포인트를 함께 제공합니다.  
-7. **나의 CareerFlow**에서 진행 중이거나 끝난 작업을 다시 열어 이어갈 수 있습니다.
+단순히 한 번에 답을 뽑아내는 생성기가 아니라,  
+단계마다 판단 근거를 남기고 같은 지원 건을 다시 열어 이어서 개선할 수 있는 구조를 만드는 데 집중했습니다.
 
 ---
 
-## Key differentiators
+## What problem it solves
 
-| 구분 | 설명 |
-|------|------|
-| **단계형 실행** | 추출·갭 분석·보완·문서·면접을 한 덩어리 프롬프트가 아니라 파이프라인 단계로 나누어 실행합니다. |
-| **설명 가능한 요약** | 공고 대비 강·약점과 보완 방향을 문장형 구조로 남깁니다. 단일 점수로 압축하지 않습니다. |
-| **운영·안정성** | 호출 제한, 동시 실행 제어, 문서 단계의 재생성 스킵 등으로 반복 비용과 충돌을 줄입니다. |
-| **실패 시 처리** | 문서 생성이 막혀도 내부용 placeholder 문구를 그대로 보여 주지 않고, 기존에 쌓인 유효한 초안은 유지하는 쪽을 우선합니다. |
-| **분석 재실행** | 분석을 다시 요청할 때마다 전체 파이프라인을 돌립니다. 저장된 결과만 보는 것은 조회 화면에서 처리합니다. |
+취업 준비에서 시간이 가장 많이 드는 구간은  
+지원자 정보와 채용공고를 비교하고, 부족한 부분을 보완하며, 문서를 반복 수정하는 작업입니다.
+
+CareerFlow AI는 이 과정을 one-shot 생성이 아닌 단계형 워크플로우로 풀어  
+사용자가 왜 이런 결과를 받았는지 이해하고, 다시 수정하고, 다음 단계로 이어갈 수 있게 만드는 것을 목표로 했습니다.
+
+---
+
+## Core workflow
+
+1. 이력서, 포트폴리오, 채용공고 입력
+2. 후보자 정보 / 공고 정보 구조화 추출
+3. 공고 대비 강점·약점·보완 포인트 분석
+4. 부족한 정보에 대한 보완 질문 생성
+5. 답변 반영 후 재분석
+6. 지원동기·자기소개 초안, 경력기술서 초안 생성
+7. 핵심 질문·심화 질문 기반 면접 준비 리포트 생성
+
+---
+
+## Technical highlights
+
+- `LangChain` 기반으로 추출, 갭 분석, 보완, 문서 생성, 면접 대비를 단계별 체인으로 분리
+- `PromptTemplate + RunnableSequence + JsonOutputParser + Zod` 조합으로 구조화 출력 적용
+- `WorkflowRun`, `llmExecution` 메타데이터를 저장해 provider / model / fallback / 실행 상태를 추적
+- `light / quality / premium` 라우팅 구조로 비용과 품질 균형을 조정
+- 데모 세션 기반 저장 / 재방문 UX를 지원해 비로그인 상태에서도 제품 흐름 검증 가능
+
+---
+
+## Reliability and operational decisions
+
+- `RequestRateLimiterService`로 과호출 제한
+- `WorkflowExecutionLockService`로 동일 단계 동시 실행 방지
+- `SKIPPED_REUSE_*`, `SKIPPED_DUPLICATE_*` 처리로 불필요한 재실행 감소
+- `fallbackUsed`, `fallbackReason`, `hasProviderApiKey` 저장으로 장애 원인 추적
+- structured output 정규화 이후 최근 핵심 7단계 실행 기준 `7/7 성공`, fallback `0회`
+
+관련 지표는 [docs/performance-metrics.md](docs/performance-metrics.md)에서 확인할 수 있습니다.
+
+---
+
+## What makes this project different
+
+- 단일 프롬프트 기반 챗봇이 아니라 **단계별 파이프라인** 구조입니다.
+- 결과만 주는 것이 아니라 **강점 / 약점 / 보완 포인트**를 설명 가능한 형태로 남깁니다.
+- 문서 생성 실패 시 내부 디버그 문구를 노출하지 않고, 기존 유효 초안을 우선 보존합니다.
+- 저장된 결과와 실행 로그를 기반으로 재실행, 재분석, 후속 작업이 가능한 **운영형 AI 서비스**로 설계했습니다.
+
+---
+
+## This project is not
+
+과장된 설명을 피하기 위해 현재 범위를 명확히 적습니다.
+
+- 완전한 RAG 기반 서비스는 아닙니다.
+- 자율 멀티툴 에이전트 런타임도 아닙니다.
+
+현재는 **입력 문서 비교 중심의 구조화 파이프라인**에 가깝고,  
+검색 보강과 에이전트형 확장은 이후 확장 가능성으로 남겨두었습니다.
 
 ---
 
 ## Tech stack
 
-- **프론트엔드**: Next.js(App Router), TypeScript, Tailwind CSS  
-- **백엔드**: NestJS, TypeScript  
-- **DB**: PostgreSQL, Prisma  
-- **AI**: LangChain, Gemini Developer API(기본) 또는 OpenAI(선택)
+- Frontend: Next.js(App Router), TypeScript, Tailwind CSS
+- Backend: NestJS, TypeScript
+- Database: PostgreSQL, Prisma
+- AI: LangChain, Gemini Developer API, OpenAI
+
+---
+
+## My role
+
+- 제품 문제 정의 및 MVP 범위 정리
+- Next.js 기반 입력 / 결과 / 재방문 흐름 구현
+- NestJS + Prisma 기반 저장 / 조회 / 실행 로그 API 설계
+- LangChain 기반 단계형 워크플로우 구성
+- 모델 라우팅, fallback, 과호출 방지 등 운영 안정성 설계
+- 포트폴리오 / 면접용 기술 문서화
 
 ---
 
 ## Local development
 
-### 백엔드
+### Backend
 
 ```bash
 cd backend
 npm install
 cp .env.example .env
-# .env 에 DATABASE_URL, LLM 키 등 설정
 npx prisma generate
 npx prisma migrate dev
 npm run start:dev
-# 기본 포트 4000, API prefix /v1
 ```
 
-### 프론트엔드
+기본 포트: `4000`  
+API prefix: `/v1`
+
+### Frontend
 
 ```bash
 cd frontend
 npm install
 cp .env.local.example .env.local
-# NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
 npm run dev
-# 기본 포트 3000
 ```
+
+기본 포트: `3000`
 
 ---
 
 ## Environment variables
 
-| 구분 | 변수 | 설명 |
+| Scope | Variable | Description |
 |------|------|------|
-| LLM | `LLM_PROVIDER` | `gemini`(기본) 또는 `openai` |
-| LLM | `GEMINI_API_KEY` / `OPENAI_API_KEY` | 생성에 필요 |
-| LLM | `GEMINI_DEFAULT_MODEL` | 가벼운 작업(추출·갭·후속, 리라이트 보조) |
-| LLM | `GEMINI_HIGH_QUALITY_MODEL` | 문서·면접 리포트 등 품질 구간 |
-| LLM | `GEMINI_PREMIUM_MODEL` | (선택) 공고 대비 분석 구간에 상위 모델 |
+| LLM | `LLM_PROVIDER` | `gemini` 또는 `openai` |
+| LLM | `GEMINI_API_KEY` / `OPENAI_API_KEY` | 모델 호출에 필요 |
+| LLM | `GEMINI_DEFAULT_MODEL` | 경량 단계용 |
+| LLM | `GEMINI_HIGH_QUALITY_MODEL` | 문서 생성 등 품질 단계용 |
+| LLM | `GEMINI_PREMIUM_MODEL` | 선택적 상위 분석 단계 |
 | Backend | `DATABASE_URL` | PostgreSQL 연결 문자열 |
-| Backend | `CORS_ORIGIN` | 프론트 Origin(콤마 구분). **production에서 비우면 브라우저 CORS가 사실상 꺼집니다.** |
-| Backend | `PORT` | 기본 `4000` |
-| Frontend | `NEXT_PUBLIC_API_BASE_URL` | 예: `http://localhost:4000/v1` — **production 빌드 시 필수** |
+| Backend | `CORS_ORIGIN` | 프론트 Origin |
+| Frontend | `NEXT_PUBLIC_API_BASE_URL` | 프론트 API 베이스 URL |
 
-자세한 값은 `backend/.env.example`, `frontend/.env.local.example` 참고.
+자세한 값은 `backend/.env.example`, `frontend/.env.local.example`를 참고하세요.
 
 ---
 
 ## Deployment
 
-### 프론트엔드 (Vercel)
+### Frontend
 
-- Root Directory: `frontend`  
-- **HTTPS 프론트 → HTTP EC2 API**일 때 Mixed Content를 피하려면: `BACKEND_URL=http://<EC2공인IP>:4000`, `NEXT_PUBLIC_API_BASE_URL=/v1`, `frontend/next.config.ts`의 rewrites로 `/v1/*` 를 백엔드에 넘깁니다.
+- Vercel 배포 기준 `frontend` 폴더를 Root Directory로 사용
+- 프록시를 쓸 경우 `NEXT_PUBLIC_API_BASE_URL=/v1` + rewrites 사용
 
-### 백엔드 (EC2)
+### Backend
 
-- 서버에서 `git pull` 후 **`backend` 폴더 안에서 Linux 환경으로 빌드**합니다(Windows에서만 빌드한 `dist`만 복사하는 방식은 비권장).  
-- PM2: `backend/ecosystem.config.cjs`  
-- 스크립트: `backend/deploy-ec2.sh` (`npm ci` → `prisma generate` → `migrate deploy` → `npm run build` → PM2)
-
-### 배포 전 체크
-
-1. 백엔드: `DATABASE_URL`, `CORS_ORIGIN`(Vercel 도메인 포함), LLM 키, `NODE_ENV=production`  
-2. 프론트: `NEXT_PUBLIC_API_BASE_URL` — 로컬은 전체 URL, Vercel+프록시는 `/v1`  
-3. AWS: API 포트(예: 4000) 인바운드 또는 리버스 프록시·TLS 종단
-
----
-
-## Integration notes
-
-- 데모 세션은 브라우저가 활성 계정을 **`x-test-user-id`** 헤더로 보냅니다. 목록 API는 **경로의 사용자와 헤더가 같을 때** 통과합니다.  
-- 워크플로 제목 등: `PATCH /v1/source-documents/:id/meta`  
-- 단계별 실행 기록은 DB의 `WorkflowRun` 등으로 추적합니다. 상세는 [docs/architecture.md](docs/architecture.md).
+- Linux 서버에서 `backend` 폴더 기준 빌드 및 실행
+- PM2 설정: `backend/ecosystem.config.cjs`
+- 배포 스크립트: `backend/deploy-ec2.sh`
 
 ---
 
 ## Documentation
 
-| 문서 | 내용 |
-|------|------|
-| [docs/project-overview.md](docs/project-overview.md) | 문제 정의, MVP 범위, 산출물 원칙 |
-| [docs/architecture.md](docs/architecture.md) | 모듈, 파이프라인 단계, 라우팅, 영속화 |
-| [docs/api-spec.md](docs/api-spec.md) | REST 계약 |
-| [docs/db-schema.md](docs/db-schema.md) | Prisma 모델 요약 |
-| [docs/langchain-in-this-project.md](docs/langchain-in-this-project.md) | LangChain 역할·비범위(RAG/에이전트) |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 빠른 참조·이슈 이력 |
-
----
-
-## Repository hygiene
-
-- 커밋하지 말 것: `.env`, `.env.local`, 실제 키·DB 접속 정보, `*.pem`  
-- 커밋하지 말 것: `node_modules/`, `dist/`, `.next/`, 로그, 대용량 zip  
-
----
-
-## REST API
-
-전체 명세는 [docs/api-spec.md](docs/api-spec.md). 예: `POST /v1/analysis/run`, `POST /v1/generated-documents/generate`, `POST /v1/interview/generate`.
+- [docs/project-overview.md](docs/project-overview.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/api-spec.md](docs/api-spec.md)
+- [docs/db-schema.md](docs/db-schema.md)
+- [docs/langchain-in-this-project.md](docs/langchain-in-this-project.md)
+- [docs/performance-metrics.md](docs/performance-metrics.md)
+- [docs/portfolio-case-study.md](docs/portfolio-case-study.md)
