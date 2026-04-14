@@ -31,7 +31,10 @@ export class FollowupQuestionsService {
     const app = await this.prisma.application.findUnique({ where: { id: applicationId } });
     if (!app) throw new NotFoundException("Application not found.");
 
-    if (!dto.force && JSON.stringify(app.followUpAnswersJson ?? []) === JSON.stringify(dto.answers)) {
+    const normalizedAnswers = this.normalizeAnswers(dto.answers);
+    const storedAnswers = this.normalizeAnswers(app.followUpAnswersJson);
+
+    if (!dto.force && JSON.stringify(storedAnswers) === JSON.stringify(normalizedAnswers)) {
       await this.prisma.workflowRun.create({
         data: {
           applicationId,
@@ -49,7 +52,7 @@ export class FollowupQuestionsService {
       projects: []
     }) as CandidateProfile;
     const prioritizedProjectContext = app.projectDescriptions?.[0]?.trim() ?? "";
-    const evidence = dto.answers.map((a) => `${a.questionId}: ${a.answer}`).join("\n");
+    const evidence = normalizedAnswers.map((a) => `${a.questionId}: ${a.answer}`).join("\n");
     const updated = await this.workflow.regenerateCandidateWithFollowUp(
       candidate,
       evidence,
@@ -62,7 +65,7 @@ export class FollowupQuestionsService {
         applicationId,
         stage: WORKFLOW_STAGE.REGENERATE_CANDIDATE,
         inputJson: {
-          answers: dto.answers,
+          answers: normalizedAnswers,
           llmRoute: regenerateRoute,
           llmExecution: regenerateExecution
         } as unknown as Prisma.InputJsonValue,
@@ -97,7 +100,7 @@ export class FollowupQuestionsService {
       where: { id: applicationId },
       data: {
         status: "FOLLOW_UP_COMPLETED",
-        followUpAnswersJson: dto.answers as unknown as Prisma.InputJsonValue,
+        followUpAnswersJson: normalizedAnswers as unknown as Prisma.InputJsonValue,
         candidateProfileJson: updated as unknown as Prisma.InputJsonValue,
         gapAnalysisJson: newGap as unknown as Prisma.InputJsonValue,
         fitAnalysisJson: fitAnalysis as unknown as Prisma.InputJsonValue
@@ -106,5 +109,25 @@ export class FollowupQuestionsService {
     } finally {
       this.lock.release(lockKey);
     }
+  }
+
+  private normalizeAnswers(answers: unknown): Array<{ questionId: string; answer: string }> {
+    if (!Array.isArray(answers)) {
+      return [];
+    }
+
+    return answers
+      .filter(
+        (item): item is { questionId: string; answer: string } =>
+          typeof item === "object" &&
+          item !== null &&
+          typeof (item as { questionId?: unknown }).questionId === "string" &&
+          typeof (item as { answer?: unknown }).answer === "string"
+      )
+      .map((item) => ({
+        questionId: item.questionId.trim(),
+        answer: item.answer.trim()
+      }))
+      .sort((left, right) => left.questionId.localeCompare(right.questionId) || left.answer.localeCompare(right.answer));
   }
 }

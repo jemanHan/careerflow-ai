@@ -12,7 +12,10 @@ _figma_ref_new/
 _figma_ref_results_dashboard/
 _figma_ref_results*/
 .figma-ref-results/
-scripts/
+scripts/*
+!scripts/performance/
+scripts/performance/*
+!scripts/performance/run-careerflow-benchmark.mjs
 
 # 디자인 AI 전달용 스냅샷 — 디자인 반영 후 프론트만 커밋할 때까지 로컬 전용
 design-ai-handoff/
