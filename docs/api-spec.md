@@ -121,7 +121,7 @@ Base URL: `/v1`
 
 - `GENERATE_INTERVIEW` — `generatedDraftJson` 내 면접 관련 필드에 병합 저장(문서 초안 필드는 덮어쓰지 않도록 서비스에서 처리)  
 
-**면접 카드(예시 구조)**
+**면접 카드 구조**
 
 ```json
 {
