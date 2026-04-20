@@ -9,6 +9,7 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "lint": "tsc --noEmit",
+    "ai-feed:collect": "ts-node src/cli/collect-ai-feed.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"

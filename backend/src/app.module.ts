@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { CommonModule } from "./common/common.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { AiFeedModule } from "./modules/ai-feed/ai-feed.module";
 import { FollowupQuestionsModule } from "./modules/followup-questions/followup-questions.module";
 import { GeneratedDocumentsModule } from "./modules/generated-documents/generated-documents.module";
 import { InterviewModule } from "./modules/interview/interview.module";
@@ -13,6 +14,7 @@ import { SourceDocumentsModule } from "./modules/source-documents/source-documen
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     CommonModule,
+    AiFeedModule,
     PrismaModule,
     LangchainModule,
     SourceDocumentsModule,
