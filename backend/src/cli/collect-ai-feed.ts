@@ -43,16 +43,19 @@ async function run(): Promise<void> {
   loadDotEnv();
   const logger = new Logger("AiFeedCollectorCli");
   const storage = new AiFeedStorageService();
+  const existingSnapshot = await storage.readSnapshot();
   const collector = new AiFeedCollector({
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.AI_FEED_GEMINI_MODEL || process.env.GEMINI_DEFAULT_MODEL || "gemini-2.5-flash-lite"
   });
 
-  const snapshot = await collector.collectSnapshot();
+  const previousCount = existingSnapshot.itemCount ?? existingSnapshot.items?.length ?? 0;
+  const snapshot = await collector.collectSnapshot(existingSnapshot);
   await storage.writeSnapshot(snapshot);
+  const newItems = Math.max(snapshot.itemCount - previousCount, 0);
 
   logger.log(
-    `AI feed snapshot saved: generatedAt=${snapshot.generatedAt}, itemCount=${snapshot.itemCount}, storagePath=${storage.getStoragePath()}`
+    `AI feed snapshot saved: generatedAt=${snapshot.generatedAt}, itemCount=${snapshot.itemCount}, newItems=${newItems}, storagePath=${storage.getStoragePath()}`
   );
 }
 

@@ -1,8 +1,8 @@
 import { AiFeedSource } from "./ai-feed.types";
 
 export const AI_FEED_MAX_ITEM_AGE_DAYS = 45;
-export const AI_FEED_MAX_ITEMS_PER_SOURCE = 2;
-export const AI_FEED_RESULT_LIMIT = 12;
+export const AI_FEED_MAX_ITEMS_PER_SOURCE = 20;
+export const AI_FEED_RESULT_LIMIT = 80;
 
 export const aiFeedSources: AiFeedSource[] = [
   {

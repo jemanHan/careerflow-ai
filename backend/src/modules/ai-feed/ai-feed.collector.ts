@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AIMessage } from "@langchain/core/messages";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { z } from "zod";
 import {
   AI_FEED_MAX_ITEM_AGE_DAYS,
@@ -12,7 +12,7 @@ import {
   strongLlmTitleKeywords,
   topicKeywordGroups
 } from "./ai-feed.constants";
-import { AiFeedItem, AiFeedSnapshot, AiFeedSource, AiFeedSummary, RawAiFeedItem } from "./ai-feed.types";
+import { AiFeedItem, AiFeedSnapshot, AiFeedSummary, RawAiFeedItem } from "./ai-feed.types";
 
 const summarySchema = z.object({
   titleKo: z.string().min(1),
@@ -43,13 +43,16 @@ export class AiFeedCollector {
     this.geminiModel = options.geminiModel?.trim() || "gemini-2.5-flash-lite";
   }
 
-  async collectSnapshot(): Promise<AiFeedSnapshot> {
+  async collectSnapshot(existingSnapshot?: AiFeedSnapshot): Promise<AiFeedSnapshot> {
     const fetchedItems = await this.fetchSourceItems();
     const shortlisted = this.shortlistItems(fetchedItems);
-    const summaries = await this.summarizeItems(shortlisted);
+    const existingItems = existingSnapshot?.items ?? [];
+    const existingLinks = new Set(existingItems.map((item) => this.normalizeLinkKey(item.link)));
+    const newShortlisted = shortlisted.filter((item) => !existingLinks.has(this.normalizeLinkKey(item.link)));
+    const summaries = await this.summarizeItems(newShortlisted);
     const summaryMap = new Map(summaries.map((item) => [item.id, item]));
 
-    const items: AiFeedItem[] = shortlisted.map((item) => {
+    const newItems: AiFeedItem[] = newShortlisted.map((item) => {
       const summary = summaryMap.get(item.id);
       return {
         id: item.id,
@@ -60,12 +63,14 @@ export class AiFeedCollector {
         title: item.title,
         titleKo: summary?.titleKo ?? item.title,
         summaryKo: summary?.summaryKo ?? this.buildFallbackSummary(item),
-        whyItMatters: summary?.whyItMatters ?? `${item.source}에서 다룬 AI 관련 업데이트입니다.`,
+        whyItMatters: summary?.whyItMatters ?? `${item.source}에서 다룬 주요 AI 업데이트입니다.`,
         bullets: summary?.bullets?.length ? summary.bullets : item.tags.slice(0, 3),
         tags: item.tags.length ? item.tags : ["AI"],
         excerpt: item.excerpt
       };
     });
+
+    const items = this.mergeItems(existingItems, newItems);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -106,7 +111,9 @@ export class AiFeedCollector {
         return result.value;
       }
 
-      this.logger.warn(`AI feed source fetch failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      this.logger.warn(
+        `AI feed source fetch failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+      );
       return [];
     });
   }
@@ -166,7 +173,10 @@ export class AiFeedCollector {
 
   private getTagText(block: string, tagNames: string[]): string {
     for (const tagName of tagNames) {
-      const pattern = new RegExp(`<${this.escapeRegExp(tagName)}\\b[^>]*>([\\s\\S]*?)<\\/${this.escapeRegExp(tagName)}>`, "i");
+      const pattern = new RegExp(
+        `<${this.escapeRegExp(tagName)}\\b[^>]*>([\\s\\S]*?)<\\/${this.escapeRegExp(tagName)}>`,
+        "i"
+      );
       const match = block.match(pattern);
       if (match?.[1]) {
         return this.stripCdata(match[1]).trim();
@@ -238,9 +248,13 @@ export class AiFeedCollector {
   private normalizeTitleKey(title: string): string {
     return title
       .toLowerCase()
-      .replace(/[^a-z0-9가-힣\s]/g, " ")
+      .replace(/[^a-z0-9\uac00-\ud7a3\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  private normalizeLinkKey(link: string): string {
+    return link.trim().toLowerCase();
   }
 
   private isRecentEnough(publishedAt: string): boolean {
@@ -274,7 +288,7 @@ export class AiFeedCollector {
       .filter((item) => item.score >= 5)
       .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
       .forEach((item) => {
-        const linkKey = item.link.toLowerCase();
+        const linkKey = this.normalizeLinkKey(item.link);
         const titleKey = item.titleKey;
 
         if (!uniqueItems.has(linkKey) && !uniqueItems.has(titleKey)) {
@@ -335,6 +349,10 @@ export class AiFeedCollector {
   }
 
   private async summarizeItems(items: RawAiFeedItem[]): Promise<AiFeedSummary[]> {
+    if (!items.length) {
+      return [];
+    }
+
     if (!this.geminiApiKey) {
       this.logger.warn("GEMINI_API_KEY is not set. Using fallback summaries for AI feed items.");
       return [];
@@ -437,6 +455,22 @@ export class AiFeedCollector {
       return item.excerpt.slice(0, 180);
     }
 
-    return `${item.source}에서 다룬 AI 관련 소식입니다.`;
+    return `${item.source}에서 다룬 주요 AI 소식입니다.`;
+  }
+
+  private mergeItems(existingItems: AiFeedItem[], newItems: AiFeedItem[]): AiFeedItem[] {
+    const merged = new Map<string, AiFeedItem>();
+
+    for (const item of existingItems) {
+      merged.set(this.normalizeLinkKey(item.link), item);
+    }
+
+    for (const item of newItems) {
+      merged.set(this.normalizeLinkKey(item.link), item);
+    }
+
+    return Array.from(merged.values()).sort(
+      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
   }
 }

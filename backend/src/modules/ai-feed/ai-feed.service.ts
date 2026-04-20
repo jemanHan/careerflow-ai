@@ -12,12 +12,13 @@ export class AiFeedService {
   }
 
   async collectAndStore(): Promise<AiFeedSnapshot> {
+    const existingSnapshot = await this.aiFeedStorageService.readSnapshot();
     const collector = new AiFeedCollector({
       geminiApiKey: process.env.GEMINI_API_KEY,
       geminiModel: process.env.AI_FEED_GEMINI_MODEL || process.env.GEMINI_DEFAULT_MODEL || "gemini-2.5-flash-lite"
     });
 
-    const snapshot = await collector.collectSnapshot();
+    const snapshot = await collector.collectSnapshot(existingSnapshot);
     await this.aiFeedStorageService.writeSnapshot(snapshot);
     return snapshot;
   }
